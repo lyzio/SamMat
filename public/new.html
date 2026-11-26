@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Starta sambeställning</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="topbar"><a href="/" class="logo">Sammat</a><a href="/">← Alla sambeställningar</a></div>
+    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+  </div>
+
+  <script>
+    const appEl = document.getElementById('app');
+    let mailConfigured = false;
+
+    async function init() {
+      const [places, rounds] = await Promise.all([api('/api/places'), api('/api/rounds')]);
+      mailConfigured = rounds.mailConfigured;
+      if (!places.length) {
+        appEl.innerHTML = '<h1>Inga ställen än</h1><p class="muted">En admin behöver lägga in ställen och menyer först.</p>';
+        return;
+      }
+      appEl.innerHTML = `
+        <h1>Starta en sambeställning</h1>
+        <p class="muted">Du får en länk att dela och en PIN-kod för att hantera rundan.</p>
+        <form id="f">
+          <label for="place">Ställe</label>
+          <select id="place" required>
+            <option value="">– Välj –</option>
+            ${places.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+          </select>
+
+          <label for="name">Namn på rundan <span class="muted">(valfritt)</span></label>
+          <input id="name" type="text" maxlength="50" placeholder="T.ex. Fredagspizza plan 3" />
+
+          <div class="grid-form">
+            <div><label for="creator">Ditt namn</label>
+              <input id="creator" type="text" required maxlength="40" autocomplete="given-name" value="${esc(store.get('sammat_name'))}" /></div>
+            <div><label for="swish">Ditt Swish-nummer</label>
+              <input id="swish" type="tel" required placeholder="070 123 45 67" value="${esc(store.get('sammat_swish'))}" /></div>
+          </div>
+
+          <div class="grid-form">
+            <div><label for="date">Datum för maten</label>
+              <input id="date" type="date" required /></div>
+            <div><label for="eta">Maten kommer ca kl. <span class="muted">(valfritt)</span></label>
+              <input id="eta" type="time" /></div>
+          </div>
+          <label for="payMode">Betalning</label>
+          <select id="payMode">
+            <option value="after">Efter maten – jag skickar betalningsmejl (kan justera efter kvittot)</option>
+            <option value="before">Direkt vid beställning – Swish visas när man beställt</option>
+          </select>
+
+          <label for="closeAt">Stäng beställningar <span class="muted">(valfritt)</span></label>
+          <input id="closeAt" type="datetime-local" />
+          <p class="muted" style="margin:4px 0 0;font-size:.82rem">Tips: bokar ni flera dagar i förväg kan stopptiden vara dagen innan.</p>
+
+          ${mailConfigured ? `
+          <label for="remind">Påminnelse till alla som beställt <span class="muted">(valfritt)</span></label>
+          <select id="remind">
+            <option value="">Ingen påminnelse</option>
+            <option value="daybefore">Dagen innan kl. 16:00</option>
+            <option value="morning">Samma dag kl. 08:00</option>
+            <option value="beforeclose">2 timmar före stopptiden</option>
+            <option value="custom">Egen tid…</option>
+          </select>
+          <input id="remindAt" type="datetime-local" style="margin-top:8px" hidden />
+          <label class="check" id="confirmRow" hidden><input type="checkbox" id="confirm" />
+            <span>Be alla bekräfta eller avboka i påminnelsen</span></label>
+          <p class="muted" id="remindInfo" style="margin:6px 0 0;font-size:.82rem"></p>` : ''}
+
+          <label for="email">Din e-post <span class="muted">(valfritt)</span></label>
+          <input id="email" type="email" maxlength="120" autocomplete="email" value="${esc(store.get('sammat_email'))}" />
+          ${mailConfigured ? `
+          <label class="check"><input type="checkbox" id="mailOrders" />
+            <span>Mejla orderlistan till mig när beställningen stängs</span></label>
+          <p class="muted" style="margin:6px 0 0;font-size:.82rem">Med e-post får du också länkarna och PIN-koden mejlade.</p>` : ''}
+
+          <div id="err"></div>
+          <button type="submit" class="primary" id="go">Starta</button>
+        </form>`;
+
+      const $ = (id) => document.getElementById(id);
+      const nowLocal = () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+      $('date').value = ymdLocal();
+      $('date').min = ymdLocal();
+      $('date').max = addDaysYmd(ymdLocal(), 60);
+      $('closeAt').min = nowLocal();
+      const closeIso = () => ($('closeAt').value ? new Date($('closeAt').value).toISOString() : null);
+      const reminderIso = () => {
+        if (!$('remind') || !$('remind').value) return null;
+        if ($('remind').value === 'custom') return $('remindAt').value ? new Date($('remindAt').value).toISOString() : null;
+        return reminderPreset($('remind').value, $('date').value, closeIso());
+      };
+      function updateRemind() {
+        if (!$('remind')) return;
+        const v = $('remind').value;
+        $('remindAt').hidden = v !== 'custom';
+        $('remindAt').min = nowLocal();
+        $('confirmRow').hidden = !v;
+        const iso = reminderIso();
+        const info = $('remindInfo');
+        if (!v) info.textContent = '';
+        else if (v === 'beforeclose' && !closeIso()) info.textContent = 'Välj en stopptid först.';
+        else if (!iso) info.textContent = '';
+        else if (Date.parse(iso) < Date.now()) info.innerHTML = '<span style="color:var(--coral)">Den tiden har redan passerat – välj en annan.</span>';
+        else info.textContent = `Skickas ${whenShort(iso)}.`;
+      }
+      ['remind', 'remindAt', 'date', 'closeAt'].forEach((id) => $(id) && $(id).addEventListener('change', updateRemind));
+      // Default the close time to the chosen date when it is left on another day
+      $('date').addEventListener('change', () => { if (!$('closeAt').value) $('closeAt').min = nowLocal(); });
+
+      $('f').onsubmit = async (e) => {
+        e.preventDefault();
+        $('err').innerHTML = '';
+        $('go').disabled = true;
+        const body = {
+          placeId: Number($('place').value),
+          name: $('name').value.trim(),
+          creatorName: $('creator').value.trim(),
+          swishNumber: $('swish').value.trim(),
+          eventDate: $('date').value,
+          payMode: $('payMode').value,
+          closeAt: closeIso(),
+          foodEta: $('eta').value,
+          reminderAt: reminderIso(),
+          confirm: Boolean($('confirm') && $('confirm').checked && reminderIso()),
+          creatorEmail: $('email').value.trim(),
+          mailOrders: Boolean($('mailOrders') && $('mailOrders').checked)
+        };
+        try {
+          const r = await api('/api/rounds', 'POST', body);
+          store.set('sammat_name', body.creatorName);
+          store.set('sammat_swish', body.swishNumber);
+          if (body.creatorEmail) store.set('sammat_email', body.creatorEmail);
+          done(r, body.creatorEmail);
+        } catch (ex) {
+          $('err').innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+          $('go').disabled = false;
+        }
+      };
+    }
+
+    function done(r, email) {
+      appEl.innerHTML = `
+        <h1>Klart! 🎉</h1>
+        <p><strong>${esc(r.title)}</strong> är igång – för <strong>${esc(dayWord(r.eventDate))}</strong>${r.closeAt ? `, stänger <strong>${esc(whenShort(r.closeAt))}</strong>` : ''}.
+          ${r.reminderAt ? `<br><span class="muted">Påminnelse${r.confirm ? ' med bekräfta/avboka' : ''} skickas ${esc(whenShort(r.reminderAt))}.</span>` : ''}</p>
+
+        <label>Dela den här länken</label>
+        <div class="linkbox"><code>${esc(r.link)}</code><button class="secondary small" id="copyLink">Kopiera</button></div>
+
+        <label style="margin-top:20px">Din PIN-kod för att hantera rundan</label>
+        <div class="pin-big">${esc(r.pin)}</div>
+        <p class="muted" style="margin-top:4px">Spara den – du behöver den från en annan enhet eller om du loggas ut.
+          ${email && mailConfigured ? `Den är också mejlad till ${esc(email)}.` : ''}</p>
+
+        <div class="row" style="margin-top:18px">
+          <a class="cta" style="margin:0;flex:1" href="/r/${esc(r.slug)}">Beställ själv</a>
+          <a class="cta" style="margin:0;flex:1;background:var(--card-2)" href="/r/${esc(r.slug)}/admin">Hantera rundan</a>
+        </div>`;
+      document.getElementById('copyLink').onclick = (e) => copyText(r.link, e.target);
+    }
+
+    init().catch((e) => { appEl.innerHTML = `<h1>Kunde inte ladda</h1><p class="muted">${esc(e.message)}</p>`; });
+  </script>
+</body>
+</html>

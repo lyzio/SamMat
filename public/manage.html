@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Hantera runda</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar no-print">
+      <div><a href="/" class="logo">Sammat</a> <span class="muted">hantera</span></div>
+      <div class="row" style="flex:0 0 auto">
+        <a href="#" id="orderLink">Beställningssidan</a>
+        <button id="logout" class="secondary small" hidden>Logga ut</button>
+      </div>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <script>
+    const slug = location.pathname.split('/')[2];
+    document.getElementById('orderLink').href = `/r/${slug}`;
+    const el = document.getElementById('content');
+    const base = `/api/rounds/${slug}`;
+    let data = null;
+    let timer = null;
+
+    const amount = (o) => (o.final_price ?? o.total_price);
+    const active = () => data.orders.filter((o) => !o.cancelled_at);
+    const orderText = (o) => [o.item_name, o.addons_text, o.removals_text].filter(Boolean).join(' - ');
+    const orderLine = (o) => `#${o.order_number} (${o.customer_name}) ${orderText(o)}`;
+    const groupLines = (orders) => {
+      const g = new Map();
+      for (const o of orders) {
+        const t = orderText(o);
+        const x = g.get(t) || { n: 0, t, nrs: [] };
+        x.n += 1; x.nrs.push('#' + o.order_number);
+        g.set(t, x);
+      }
+      return [...g.values()].sort((a, b) => a.t.localeCompare(b.t, 'sv')).map((x) => `${x.n}× ${x.t} (${x.nrs.join(', ')})`);
+    };
+
+    async function fetchData() {
+      try {
+        data = await api(`${base}/manage`);
+        return true;
+      } catch (e) {
+        clearInterval(timer);
+        document.getElementById('logout').hidden = true;
+        if (e.status === 401) {
+          pinLogin(el, { title: 'Hantera sambeställning', hint: 'Ange PIN-koden du fick när rundan startades.', url: `${base}/login`, onOk: init });
+        } else {
+          el.innerHTML = `<div class="card"><h1>Hittades inte</h1><p class="muted">${esc(e.message)}</p><a class="cta" href="/">Till startsidan</a></div>`;
+        }
+        return false;
+      }
+    }
+
+    async function init() {
+      if (!(await fetchData())) return;
+      document.getElementById('logout').hidden = false;
+      el.innerHTML = `
+        <div id="head"></div>
+        <div id="orders"></div>
+        <div id="mail"></div>
+        <div id="settings"></div>`;
+      renderAll();
+      clearInterval(timer);
+      timer = setInterval(refresh, 5000);
+    }
+
+    function renderAll() {
+      document.title = `Sammat – ${data.round.title}`;
+      renderHead(); renderOrders(); renderMail(); renderSettings();
+    }
+
+    async function refresh() {
+      if (!(await fetchData())) return;
+      renderHead();
+      const box = document.getElementById('orders');
+      const typing = box.contains(document.activeElement) && document.activeElement.matches('input[type=number]');
+      if (!typing) renderOrders();
+      updateCounts();
+    }
+
+    // ---------- Head: status, link, PIN, open/close, end ----------
+    function renderHead() {
+      const r = data.round;
+      document.getElementById('head').innerHTML = `
+        <div class="card no-print">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h1 style="margin:0;flex:1">${esc(r.title)}</h1>
+            <span class="badge ${r.isOpen ? 'open' : 'closed'}" style="flex:0 0 auto">${r.isOpen ? 'Öppen' : 'Stängd'}</span>
+          </div>
+          <div class="info">
+            ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
+            <span>av ${esc(r.creatorName)}</span>
+            <span>Swish <strong>${esc(r.swishNumber)}</strong> ${r.payMode === 'before' ? '(betalas direkt)' : '(betalas efter)'}</span>
+            <span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>
+            ${r.isOpen && r.closeAt ? `<span>Stänger <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : ''}
+            ${r.foodEta ? `<span>Mat ca <strong>${esc(r.foodEta)}</strong></span>` : ''}
+          </div>
+          ${r.reminderAt || r.reminderSentAt ? `<div class="info">
+            <span>🔔 Påminnelse${r.confirm ? ' med bekräfta/avboka' : ''}: ${r.reminderSentAt ? `skickad <strong>${esc(whenShort(r.reminderSentAt))}</strong>` : `skickas <strong>${esc(whenShort(r.reminderAt))}</strong>`}</span>
+            ${confirmStats()}
+          </div>` : ''}
+          <label>Länk att dela</label>
+          <div class="linkbox"><code>${esc(r.link)}</code><button class="secondary small" data-copy-link>Kopiera</button></div>
+          <p class="muted" style="margin:10px 0 0">PIN-kod för att hantera: <strong class="pin-inline">${esc(r.pin)}</strong></p>
+          <div class="row" style="margin-top:16px">
+            <button class="secondary" data-toggle style="flex:0 0 auto">${r.isOpen ? 'Stäng beställningar' : 'Öppna igen'}</button>
+            <button class="danger" data-end style="flex:0 0 auto">Avsluta runda &amp; radera</button>
+          </div>
+        </div>`;
+    }
+
+    function confirmStats() {
+      const all = data.orders;
+      const yes = all.filter((o) => o.confirmed_at && !o.cancelled_at).length;
+      const no = all.filter((o) => o.cancelled_at).length;
+      const wait = all.length - yes - no;
+      if (!data.round.confirm && !no) return '';
+      return `<span>✓ ${yes} bekräftat · ${wait} väntar · ✕ ${no} avbokat</span>`;
+    }
+
+    // ---------- Orders + payment ----------
+    function renderOrders() {
+      const orders = active();
+      const cancelled = data.orders.filter((o) => o.cancelled_at);
+      const showStatus = data.round.confirm || cancelled.length > 0;
+      const status = (o) => o.cancelled_at ? '<span class="st no">Avbokad</span>'
+        : o.confirmed_at ? '<span class="st yes">✓ Bekräftad</span>'
+        : data.round.reminderSentAt && data.round.confirm ? '<span class="st wait">Väntar</span>' : '';
+      const box = document.getElementById('orders');
+      if (!data.orders.length) {
+        box.innerHTML = `<div class="card"><h2>Orderlista</h2><p class="muted">Inga beställningar ännu. Dela länken!</p></div>`;
+        return;
+      }
+      const sum = orders.reduce((s, o) => s + amount(o), 0);
+      const paidSum = orders.filter((o) => o.paid).reduce((s, o) => s + amount(o), 0);
+      const t = (iso) => (iso ? hm(iso) : '');
+      const payRows = [...orders, ...cancelled].map((o) => o.cancelled_at ? `
+        <tr class="cancelled">
+          <td class="nr">#${o.order_number}</td>
+          <td>${esc(o.customer_name)}<div class="muted" style="font-size:.8rem">${esc(o.email)}</div></td>
+          <td>${esc(o.item_name)}</td>
+          <td class="r muted">${o.total_price} kr</td>
+          <td></td><td></td>
+          ${showStatus ? `<td>${status(o)}</td>` : ''}
+          <td class="r" style="white-space:nowrap"><button class="secondary small" data-restore="${o.order_number}" title="Ångra avbokning">↺</button></td>
+          <td class="r"><button class="danger small" data-del="${o.order_number}">✕</button></td>
+        </tr>` : `
+        <tr class="${o.paid ? 'paid' : ''}">
+          <td class="nr">#${o.order_number}</td>
+          <td>${esc(o.customer_name)}<div class="muted" style="font-size:.8rem">${esc(o.email)}</div></td>
+          <td>${esc(o.item_name)}</td>
+          <td class="r muted">${o.total_price} kr</td>
+          <td class="r"><input type="number" min="0" class="price-in ${o.final_price != null && o.final_price !== o.total_price ? 'changed' : ''}"
+               data-price="${o.order_number}" value="${o.final_price ?? ''}" placeholder="${o.total_price}" /></td>
+          <td class="center"><input type="checkbox" data-paid="${o.order_number}" ${o.paid ? 'checked' : ''} /></td>
+          ${showStatus ? `<td>${status(o)}</td>` : ''}
+          <td class="muted" style="font-size:.8rem;white-space:nowrap">${[o.reminder_mail_at ? `🔔 ${t(o.reminder_mail_at)}` : '', o.food_mail_at ? `🍽️ ${t(o.food_mail_at)}` : '', o.pay_mail_at ? `💸 ${t(o.pay_mail_at)}` : ''].filter(Boolean).join('<br>')}</td>
+          <td class="r"><button class="danger small" data-del="${o.order_number}">✕</button></td>
+        </tr>`).join('');
+
+      box.innerHTML = `
+        <div class="card">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <h2 style="margin:0;flex:1">Orderlista – ${esc(data.round.title)} <span class="muted">(${orders.length} st${cancelled.length ? `, ${cancelled.length} avbokade` : ''})</span></h2>
+            <button class="secondary small no-print" data-copy="list" style="flex:0 0 auto">Kopiera</button>
+            <button class="secondary small no-print" onclick="window.print()" style="flex:0 0 auto">Skriv ut</button>
+          </div>
+          <div class="orderlist">${orders.map((o) => `<div>${esc(orderLine(o))}</div>`).join('')}</div>
+          <details class="no-print" style="margin-top:14px">
+            <summary class="muted">Sammanställt per rätt</summary>
+            <div class="orderlist">${groupLines(orders).map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+            <button class="secondary small" data-copy="groups" style="margin-top:8px">Kopiera sammanställning</button>
+          </details>
+        </div>
+        <div class="card no-print">
+          <h2>Betalning</h2>
+          <p class="muted">Totalt: <strong>${sum} kr</strong> · Swishat: <strong>${paidSum} kr</strong> · Kvar: <strong>${sum - paidSum} kr</strong><br>
+            ${data.round.payMode === 'before'
+              ? 'Alla fick Swish direkt med menypriset. Skiljer kvittot? Justera <em>Att betala</em> och skicka betalningsmejl till de som inte är markerade som swishade.'
+              : 'Skriv in det riktiga priset från kvittot i <em>Att betala</em> (tomt = menypris). Det används i betalningsmejlet.'}</p>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Nr</th><th>Namn</th><th>Produkt</th><th class="r">Meny</th><th class="r">Att betala</th><th>Swishat</th>${showStatus ? '<th>Status</th>' : ''}<th>Mejlat</th><th></th></tr></thead>
+            <tbody>${payRows}</tbody>
+          </table></div>
+        </div>`;
+    }
+
+    // ---------- Mail ----------
+    function updateCounts() {
+      const f = document.getElementById('cntFood'); const p = document.getElementById('cntPay');
+      const r = document.getElementById('cntRem');
+      if (f) f.textContent = active().length;
+      if (p) p.textContent = active().filter((o) => !o.paid).length;
+      if (r) r.textContent = active().length;
+    }
+
+    function renderMail() {
+      const box = document.getElementById('mail');
+      if (!data.mailConfigured) {
+        box.innerHTML = '<div class="card no-print"><h2>Mejl</h2><p class="muted">Mejl är inte konfigurerat på servern.</p></div>';
+        return;
+      }
+      box.innerHTML = `
+        <div class="card no-print">
+          <h2>Mejl</h2>
+          <p class="muted" style="margin-top:0">Skickas bara när du trycker. Valfri ordning, och går att skicka igen.</p>
+          <label for="mailExtra">Extra rad i mejlet (valfritt)</label>
+          <textarea id="mailExtra" rows="2" maxlength="500" placeholder="T.ex. Maten står i köket på plan 3"></textarea>
+          <div class="row" style="margin-top:12px">
+            <button data-mail="food" style="flex:0 0 auto">🍽️ Maten är här (<span id="cntFood">0</span>)</button>
+            <button data-mail="pay" class="go" style="flex:0 0 auto">💸 Skicka betalningsmejl (<span id="cntPay">0</span> obetalda)</button>
+            <button data-mail="reminder" class="secondary" style="flex:0 0 auto">🔔 Skicka påminnelse nu (<span id="cntRem">0</span>)</button>
+            <button data-mail="orders" class="secondary" style="flex:0 0 auto">📋 Mejla orderlistan till mig</button>
+          </div>
+        </div>`;
+      updateCounts();
+    }
+
+    async function sendMail(kind, btn) {
+      if (kind === 'orders') {
+        const r = await api(`${base}/mail/orders`, 'POST', {});
+        alert(`Orderlistan skickad till ${r.to}.`);
+        return;
+      }
+      if (kind === 'reminder') {
+        const n = active().length;
+        if (!n) return alert('Ingen att skicka till.');
+        if (!confirm(`Skicka påminnelse${data.round.confirm ? ' (med bekräfta/avboka)' : ''} till ${n} person(er) nu?` +
+          (data.round.reminderSentAt ? '\nDen är redan skickad en gång.' : '') + (data.round.reminderAt && !data.round.reminderSentAt ? '\nDen schemalagda påminnelsen skickas då inte igen.' : ''))) return;
+        btn.disabled = true;
+        try {
+          const r = await api(`${base}/mail/reminder`, 'POST', {});
+          alert(`Skickat: ${r.sent}` + (r.failed.length ? `\nMisslyckades:\n${r.failed.join('\n')}` : ''));
+        } finally { btn.disabled = false; await refresh(); }
+        return;
+      }
+      const extra = document.getElementById('mailExtra').value.trim();
+      const list = kind === 'food' ? active() : active().filter((o) => !o.paid);
+      if (!list.length) return alert('Ingen att skicka till.');
+      const already = list.filter((o) => (kind === 'food' ? o.food_mail_at : o.pay_mail_at)).length;
+      let msg = `Skicka ${kind === 'food' ? '"Maten är här"' : 'betalningsmejl'} till ${list.length} person(er)?`;
+      if (already) msg += `\n${already} har redan fått det och får det igen.`;
+      if (kind === 'pay') {
+        const noFinal = list.filter((o) => o.final_price == null).length;
+        if (noFinal) msg += `\n${noFinal} har inget kvittopris – menypriset används.`;
+      }
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      try {
+        const r = await api(`${base}/mail/${kind}`, 'POST', { extra });
+        alert(`Skickat: ${r.sent}` + (r.skipped ? `\nUtan e-post: ${r.skipped}` : '') + (r.failed.length ? `\nMisslyckades:\n${r.failed.join('\n')}` : ''));
+      } finally {
+        btn.disabled = false;
+        await refresh();
+      }
+    }
+
+    // ---------- Settings ----------
+    function renderSettings() {
+      const r = data.round;
+      document.getElementById('settings').innerHTML = `
+        <div class="card no-print">
+          <details>
+            <summary><h2 style="display:inline">Inställningar</h2></summary>
+            <form id="setForm">
+              <div class="grid-form">
+                <div><label for="sName">Namn på rundan</label><input id="sName" type="text" maxlength="50" value="${esc(r.name)}" placeholder="${esc(r.placeName)}" /></div>
+                <div><label for="sSwish">Swish-nummer</label><input id="sSwish" type="tel" required value="${esc(r.swishNumber)}" /></div>
+                <div><label for="sDate">Datum för maten</label><input id="sDate" type="date" value="${esc(r.eventDate)}" /></div>
+                <div><label for="sEta">Maten kommer ca kl.</label><input id="sEta" type="time" value="${esc(r.foodEta)}" /></div>
+                <div><label for="sClose">Stäng beställningar</label><input id="sClose" type="datetime-local" value="${esc(r.isOpen ? isoToLocal(r.closeAt) : '')}" /></div>
+                ${data.mailConfigured ? `<div><label for="sRemind">Påminnelse</label><input id="sRemind" type="datetime-local" value="${esc(r.reminderSentAt ? '' : isoToLocal(r.reminderAt))}" /></div>` : ''}
+              </div>
+              <label for="sPay">Betalning</label>
+              <select id="sPay">
+                <option value="after" ${r.payMode === 'after' ? 'selected' : ''}>Efter maten – betalningsmejl</option>
+                <option value="before" ${r.payMode === 'before' ? 'selected' : ''}>Direkt vid beställning</option>
+              </select>
+              ${data.mailConfigured ? `<label class="check"><input type="checkbox" id="sConfirm" ${r.confirm ? 'checked' : ''} />
+                <span>Be alla bekräfta eller avboka i påminnelsen</span></label>
+                ${r.reminderSentAt ? `<p class="muted" style="font-size:.82rem;margin:4px 0 0">Påminnelsen skickades ${esc(whenShort(r.reminderSentAt))}. Sätt en ny tid för att skicka igen.</p>` : ''}` : ''}
+              <label for="sEmail">Din e-post</label>
+              <input id="sEmail" type="email" maxlength="120" value="${esc(r.creatorEmail)}" />
+              ${data.mailConfigured ? `<label class="check"><input type="checkbox" id="sMail" ${r.mailOrders ? 'checked' : ''} />
+                <span>Mejla orderlistan till mig när beställningen stängs${r.ordersMailedAt ? ` <span class="muted">(skickad ${hm(r.ordersMailedAt)})</span>` : ''}</span></label>` : ''}
+              <p class="muted" style="font-size:.82rem">Swish-numret gäller betalningssidan och nya betalningsmejl direkt. Beställningarna ligger kvar.</p>
+              <div id="setErr"></div>
+              <button type="submit" style="margin-top:8px">Spara</button>
+            </form>
+          </details>
+        </div>`;
+      document.getElementById('setForm').onsubmit = act(async (e) => {
+        e.preventDefault();
+        const $ = (id) => document.getElementById(id);
+        const body = {
+          name: $('sName').value.trim(),
+          swishNumber: $('sSwish').value.trim(),
+          eventDate: $('sDate').value,
+          payMode: $('sPay').value,
+          closeAt: $('sClose').value ? new Date($('sClose').value).toISOString() : null,
+          foodEta: $('sEta').value,
+          creatorEmail: $('sEmail').value.trim()
+        };
+        if ($('sMail')) body.mailOrders = $('sMail').checked;
+        if ($('sRemind')) {
+          const v = $('sRemind').value;
+          if (v || !data.round.reminderSentAt) body.reminderAt = v ? new Date(v).toISOString() : null;
+          body.confirm = $('sConfirm').checked;
+        }
+        try {
+          await api(base, 'PATCH', body);
+        } catch (ex) {
+          $('setErr').innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+          return;
+        }
+        await fetchData();
+        renderAll();
+      });
+    }
+
+    // ---------- Delegated events ----------
+    el.addEventListener('click', act(async (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.copyLink !== undefined) return copyText(data.round.link, t);
+      if (t.dataset.copy) return copyText(t.dataset.copy === 'groups' ? groupLines(active()).join('\n') : active().map(orderLine).join('\n'), t);
+      if (t.dataset.restore) {
+        await api(`${base}/orders/${t.dataset.restore}/restore`, 'PATCH', {});
+        return refresh();
+      }
+      if (t.dataset.toggle !== undefined) {
+        await api(base, 'PATCH', { isOpen: !data.round.isOpen });
+        return refresh();
+      }
+      if (t.dataset.end !== undefined) {
+        const unpaid = active().filter((o) => !o.paid).length;
+        if (!confirm(`Avsluta rundan?\n\nAlla ${data.orders.length} beställningar raderas permanent, med namn och e-postadresser. Betalningslänkarna slutar fungera.` + (unpaid ? `\n\nOBS: ${unpaid} är inte markerade som swishade.` : ''))) return;
+        await api(`${base}/end`, 'POST', {});
+        clearInterval(timer);
+        el.innerHTML = '<div class="card"><h1>Rundan är avslutad</h1><p class="muted">Allt är raderat. Tack för att du höll i den!</p><a class="cta" href="/">Till startsidan</a></div>';
+        return;
+      }
+      if (t.dataset.del) {
+        const o = data.orders.find((x) => x.order_number === Number(t.dataset.del));
+        if (!confirm(`Ta bort #${o.order_number} ${o.customer_name}? Numret återanvänds inte.`)) return;
+        await api(`${base}/orders/${o.order_number}`, 'DELETE');
+        return refresh();
+      }
+      if (t.dataset.mail) return sendMail(t.dataset.mail, t);
+    }));
+
+    el.addEventListener('change', act(async (e) => {
+      const t = e.target;
+      if (t.dataset.price) {
+        await api(`${base}/orders/${t.dataset.price}/price`, 'PATCH', { price: t.value === '' ? null : Number(t.value) });
+        t.blur();
+        await refresh();
+      } else if (t.dataset.paid) {
+        await api(`${base}/orders/${t.dataset.paid}/paid`, 'PATCH', { paid: t.checked });
+        await refresh();
+      }
+    }));
+
+    document.getElementById('logout').onclick = async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      location.reload();
+    };
+
+    init();
+  </script>
+</body>
+</html>

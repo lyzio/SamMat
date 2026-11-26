@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Sambeställning</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap wide">
+    <div class="topbar" style="max-width:560px;margin-left:auto;margin-right:auto">
+      <a href="/" class="logo">Sammat</a>
+      <a href="admin" id="manageLink">Hantera</a>
+    </div>
+    <div class="stage" id="stage">
+      <div class="wall left" id="wallL"></div>
+      <div class="card" id="app" style="width:100%;max-width:560px;margin-left:auto;margin-right:auto"><p class="muted">Laddar…</p></div>
+      <div class="wall right" id="wallR"></div>
+    </div>
+    <div class="wall-title" id="wallTitle"></div>
+    <div class="wall-bottom" id="wallB"></div>
+  </div>
+
+  <script>
+    const slug = location.pathname.split('/')[2];
+    document.getElementById('manageLink').href = `/r/${slug}/admin`;
+    const appEl = document.getElementById('app');
+    let round = null;
+    let mode = null; // 'form' | 'closed' | 'done' | 'gone'
+    const seen = new Set();
+
+    // ---------- Note wall ----------
+    function renderWall(board) {
+      const note = (b) => {
+        const rot = ((b.nr * 37) % 11) - 5; // stable tilt per order
+        const fresh = seen.size && !seen.has(b.nr) ? ' new' : '';
+        return `<div class="note c${b.nr % 5}${fresh}" style="--rot:${rot}deg"><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
+      };
+      const left = board.filter((_, i) => i % 2 === 0);
+      const right = board.filter((_, i) => i % 2 === 1);
+      document.getElementById('wallL').innerHTML = left.map(note).join('');
+      document.getElementById('wallR').innerHTML = right.map(note).join('');
+      document.getElementById('wallB').innerHTML = board.map(note).join('');
+      document.getElementById('wallTitle').textContent = board.length ? `Redan beställt (${board.length})` : '';
+      document.getElementById('stage').classList.toggle('has-notes', board.length > 0);
+      board.forEach((b) => seen.add(b.nr));
+      if (!seen.size) seen.add(-1); // first load done: later additions animate
+    }
+
+    function infoHtml(r) {
+      return `
+        <div class="info" id="info">
+          ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
+          <span>av ${esc(r.creatorName)}</span>
+          ${r.isToday ? '' : `<span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>`}
+          ${r.isOpen && r.closeAt ? `<span>Beställ senast <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : ''}
+          ${r.foodEta ? `<span>Mat ca <strong>${esc(r.foodEta)}</strong></span>` : ''}
+        </div>`;
+    }
+
+    async function load() {
+      try {
+        round = await api(`/api/rounds/${slug}`);
+      } catch (e) {
+        if (e.status === 404) {
+          mode = 'gone';
+          appEl.innerHTML = `<h1>Sambeställningen är avslutad</h1><p class="muted">${esc(e.message)}</p><a class="cta" href="/">Se pågående sambeställningar</a>`;
+          renderWall([]);
+        }
+        return;
+      }
+      document.title = `Sammat – ${round.title}`;
+      renderWall(round.board);
+      if (mode === 'done') return;
+      if (!round.isOpen) {
+        if (mode !== 'closed') {
+          mode = 'closed';
+          appEl.innerHTML = `<h1>${esc(round.title)}</h1>${infoHtml(round)}
+            <p style="margin-top:16px">Beställningen är <strong>stängd</strong>. ${round.orderCount} st beställde.</p>`;
+        }
+        return;
+      }
+      if (mode !== 'form') { mode = 'form'; renderForm(); }
+      else document.getElementById('info').outerHTML = infoHtml(round);
+    }
+
+    function total() {
+      const item = round.menu.find((m) => m.id === Number(document.getElementById('menu').value));
+      let sum = item ? item.price : 0;
+      document.querySelectorAll('input[name="addon"]:checked').forEach((cb) => {
+        const a = round.addons.find((x) => x.id === Number(cb.value));
+        if (a) sum += a.price;
+      });
+      document.getElementById('total').textContent = `${sum} kr`;
+    }
+
+    function renderForm() {
+      const opt = (list, name, showPrice) => list.map((o) => `
+        <label class="opt-row">
+          <span><input type="checkbox" name="${name}" value="${o.id}" /> ${esc(o.name)}</span>
+          ${showPrice ? `<span class="price">${o.price > 0 ? '+' + o.price + ' kr' : '0 kr'}</span>` : ''}
+        </label>`).join('');
+
+      appEl.innerHTML = `
+        <h1>${esc(round.title)}</h1>
+        ${infoHtml(round)}
+        <p class="muted">${round.payMode === 'before' ? 'Du swishar direkt när du har beställt.' : 'Du betalar efter maten – du får ett mejl med belopp och Swish.'}</p>
+        <form id="f">
+          <label for="name">Ditt namn</label>
+          <input id="name" type="text" required maxlength="40" placeholder="T.ex. Maja" autocomplete="given-name" value="${esc(store.get('sammat_name'))}" />
+
+          <label for="email">E-post</label>
+          <input id="email" type="email" required maxlength="120" placeholder="namn@exempel.se" autocomplete="email" value="${esc(store.get('sammat_email'))}" />
+
+          <label for="menu">Produkt</label>
+          <select id="menu" required>
+            <option value="">– Välj –</option>
+            ${round.menu.map((m) => `<option value="${m.id}">${esc(m.name)} (${m.price} kr)</option>`).join('')}
+          </select>
+
+          ${round.addons.length ? `<label>Tillval</label><div class="opt-list">${opt(round.addons, 'addon', true)}</div>` : ''}
+
+          <label>Bortval</label>
+          ${round.removals.length ? `<div class="opt-list">${opt(round.removals, 'removal', false)}</div>` : ''}
+          <input id="customRemoval" type="text" maxlength="120" placeholder="Annat bortval / kommentar (frivilligt)" style="margin-top:8px" />
+
+          <div class="summary"><span>Pris (enligt meny)</span><span id="total">0 kr</span></div>
+          <div id="err"></div>
+          <button type="submit" class="primary" id="submit">Skicka beställning</button>
+        </form>`;
+
+      const form = document.getElementById('f');
+      form.addEventListener('change', total);
+      total();
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('submit');
+        const err = document.getElementById('err');
+        err.innerHTML = '';
+        btn.disabled = true;
+        const body = {
+          customerName: document.getElementById('name').value.trim(),
+          email: document.getElementById('email').value.trim(),
+          menuItemId: Number(document.getElementById('menu').value),
+          addonIds: [...document.querySelectorAll('input[name="addon"]:checked')].map((x) => Number(x.value)),
+          removalIds: [...document.querySelectorAll('input[name="removal"]:checked')].map((x) => Number(x.value)),
+          customRemoval: document.getElementById('customRemoval').value.trim()
+        };
+        try {
+          const o = await api(`/api/rounds/${slug}/orders`, 'POST', body);
+          store.set('sammat_name', body.customerName);
+          store.set('sammat_email', body.email);
+          renderDone(o);
+          load();
+        } catch (ex) {
+          err.innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+          btn.disabled = false;
+        }
+      });
+    }
+
+    async function renderDone(o) {
+      mode = 'done';
+      if (o.payMode === 'before') return renderPayNow(o);
+      appEl.innerHTML = `
+        <h1>Beställning mottagen ✓</h1>
+        <p class="muted">Tack, <strong>${esc(o.customerName)}</strong>!</p>
+        <div class="box">
+          <div><strong>Produkt:</strong> ${esc(o.itemName)}</div>
+          ${o.addonsText ? `<div><strong>Tillval:</strong> ${esc(o.addonsText)}</div>` : ''}
+          ${o.removalsText ? `<div><strong>Bortval:</strong> ${esc(o.removalsText)}</div>` : ''}
+          <div class="amount">ca ${o.totalPrice} kr</div>
+        </div>
+        ${o.isToday ? '' : `<p>Maten är för <strong>${esc(dayWord(o.eventDate))}</strong>.</p>`}
+        ${o.reminderAt ? `<p>Du får en påminnelse ${esc(whenShort(o.reminderAt))}${o.confirm ? ' där du bekräftar eller avbokar' : ''}.</p>` : ''}
+        <p>Betala inte nu. Du får ett mejl till <strong>${esc(o.email)}</strong> när maten är här${o.foodEta ? ` (ca ${esc(o.foodEta)})` : ''}, och ett med exakt belopp och Swish efteråt.</p>
+        <button class="secondary full" id="again">Lägg en beställning till</button>`;
+      document.getElementById('again').onclick = () => { mode = null; load(); };
+    }
+
+    // Pay before: show amount, QR (desktop) and "Öppna Swish" right away
+    async function renderPayNow(o) {
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      let p;
+      try { p = await api('/api/pay/' + o.payToken); } catch (e) { p = null; }
+      appEl.innerHTML = `
+        <h1>Beställning mottagen ✓</h1>
+        <p class="muted">Tack, <strong>${esc(o.customerName)}</strong>! Swisha nu:</p>
+        <div class="box">
+          <div><strong>#${p ? p.orderNumber : ''}</strong> ${esc(p ? p.orderText : o.itemName)}</div>
+          <div class="amount">${o.totalPrice} kr</div>
+          ${p ? `<div class="muted" style="margin-top:4px">Till: ${esc(p.swishNumber)} · Meddelande: ”${esc(p.swishMessage)}”</div>` : ''}
+        </div>
+        ${p ? `
+          ${isMobile ? '' : `<div class="qr">${p.qrSvg}</div><p class="muted center">Skanna med Swish-appen</p>`}
+          <a class="swish" href="${esc(p.swishAppUrl)}">Öppna Swish</a>
+          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>Visa QR-kod</summary><div class="qr">${p.qrSvg}</div></details>` : ''}` : ''}
+        ${o.mailConfigured ? `<p class="muted" style="margin-top:14px">Betalinfon är också mejlad till ${esc(o.email)}${o.foodEta ? `. Maten kommer ca ${esc(o.foodEta)}` : ''}${o.isToday ? '' : ` ${esc(dayWord(o.eventDate))}`}.</p>` : ''}
+        ${o.reminderAt ? `<p class="muted">Du får en påminnelse ${esc(whenShort(o.reminderAt))}.</p>` : ''}
+        <button class="secondary full" id="again">Lägg en beställning till</button>`;
+      document.getElementById('again').onclick = () => { mode = null; load(); };
+    }
+
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – sambeställning av mat med Swish</title>
+  <meta name="description" content="Sammat är en liten självhostad webbapp för att samla ihop matbeställningar på jobbet eller i föreningen, med Swish-QR, påminnelser och orderlista till restaurangen." />
+  <style>
+    :root {
+      --bg: #1e272e; --card: #273139; --line: #3d4a54; --text: #f1f2f6; --muted: #a4b0be;
+      --red: #f53b57; --yellow: #ffd32a; --purple: #474787; --green: #05c46b;
+      font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif; color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; }
+    a { color: var(--yellow); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+    h1, h2, h3, .logo { font-family: 'Roboto Slab', Georgia, serif; }
+    header { padding: 56px 0 30px; }
+    .logo { color: var(--red); font-size: 3.2rem; font-weight: 700; display: inline-block; transform: rotate(-2deg); margin: 0; }
+    .tagline { font-size: 1.3rem; color: var(--muted); margin: 6px 0 22px; max-width: 640px; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+    .btn { display: inline-block; text-decoration: none; background: var(--red); color: #fff; padding: 12px 20px; border-radius: 10px;
+      font-weight: 700; box-shadow: 4px 4px 0 var(--purple); }
+    .btn.alt { background: var(--card); border: 1px solid var(--line); }
+    h2 { color: var(--red); font-size: 1.7rem; margin: 64px 0 16px; }
+    h3 { margin: 0 0 6px; font-size: 1.15rem; }
+    .muted { color: var(--muted); }
+    .hero { margin-top: 34px; border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.5); width: 100%; display: block; }
+    .step { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center; margin: 40px 0; }
+    .step.flip .text { order: 2; }
+    .step img { width: 100%; border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.45); display: block; }
+    .step img.phone { max-width: 300px; margin: 0 auto; max-height: 600px; object-fit: cover; object-position: top; }
+    .step img.tall { max-height: 520px; object-fit: cover; object-position: top; }
+    .num { display: inline-block; font-family: 'Roboto Slab', Georgia, serif; background: var(--yellow); color: var(--bg); font-weight: 700;
+      width: 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%; margin-right: 8px; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .feature { background: var(--card); border-radius: 12px; padding: 18px 20px; border-left: 4px solid var(--red); }
+    .feature p { margin: 0; color: var(--muted); font-size: .95rem; }
+    pre { background: #151b20; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .88rem; line-height: 1.5; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    p code, li code, td code { background: #151b20; padding: 1px 6px; border-radius: 5px; font-size: .9em; }
+    table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; align-items: start; }
+    .gallery figure { margin: 0; }
+    .gallery img { width: 100%; max-height: 520px; object-fit: cover; object-position: top; border-radius: 10px; box-shadow: 0 10px 28px rgba(0,0,0,.45); display: block; }
+    figcaption { color: var(--muted); font-size: .88rem; margin-top: 8px; }
+    footer { margin: 80px 0 40px; color: var(--muted); font-size: .9rem; border-top: 1px dashed var(--line); padding-top: 20px; }
+    @media (max-width: 760px) {
+      .step { grid-template-columns: 1fr; }
+      .step.flip .text { order: 0; }
+      .logo { font-size: 2.6rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <p class="logo">Sammat</p>
+      <p class="tagline">Sambeställ maten på jobbet eller i föreningen. Folk väljer själva, du får en färdig orderlista, och alla swishar rätt belopp.</p>
+      <div class="buttons">
+        <a class="btn" href="#installera">Installera</a>
+        <a class="btn alt" href="https://github.com/lyzio/SamMat">Källkod på GitHub</a>
+      </div>
+      <img class="hero" src="img/round.png" alt="Beställningssidan med lappar för alla som redan beställt" />
+    </header>
+
+    <h2>Så funkar det</h2>
+
+    <div class="step">
+      <div class="text">
+        <h3><span class="num">1</span>Någon startar en runda</h3>
+        <p>Vem som helst kan starta en sambeställning: välj ställe, sätt ditt Swish-nummer, och välj om du vill en stopptid, ett datum (upp till 60 dagar fram) och en påminnelse.
+          Du får en länk att dela och en fyrsiffrig PIN-kod för att hantera rundan.</p>
+      </div>
+      <img class="phone" src="img/new.png" alt="Starta en sambeställning" />
+    </div>
+
+    <div class="step flip">
+      <div class="text">
+        <h3><span class="num">2</span>Alla beställer själva</h3>
+        <p>Ingen inloggning – namn, e-post, rätt, tillval och bortval. Priset räknas ut direkt. Varje beställning blir en liten lapp runt formuläret, så man ser vad de andra tagit.
+          Flera rundor kan pågå samtidigt; startsidan listar dem.</p>
+      </div>
+      <img class="phone" src="img/round-mobile.png" alt="Beställning i mobilen" />
+    </div>
+
+    <div class="step">
+      <div class="text">
+        <h3><span class="num">3</span>Orderlista utan priser</h3>
+        <p>Den som håller i rundan får en ren lista att läsa upp, kopiera eller skriva ut till restaurangen:<br>
+          <code>#1 (Anna) Vesuvio - Bearnaisesås - Utan lök</code><br>
+          Numret står på lådan när maten kommer. Rundan kan stänga av sig själv vid en viss tid och mejla listan till den som startade den.</p>
+      </div>
+      <img class="tall" src="img/manage.png" alt="Hantera rundan" />
+    </div>
+
+    <div class="step flip">
+      <div class="text">
+        <h3><span class="num">4</span>Maten är här – och betala</h3>
+        <p>Två knappar: <em>Maten är här</em> och <em>Betalningsmejl</em>. Skriv in det riktiga priset från kvittot först om det skiljer. Betalningsmejlet har belopp, Swish-nummer, meddelande och en QR-kod direkt i mejlet,
+          plus en länk med <em>Öppna Swish</em> för mobilen. Vill man hellre att folk betalar direkt när de beställer, går det att välja per runda.</p>
+      </div>
+      <img src="img/mail-pay.png" alt="Betalningsmejl med Swish-QR" />
+    </div>
+
+    <div class="step">
+      <div class="text">
+        <h3><span class="num">5</span>Påminnelse och bekräftelse</h3>
+        <p>Bokar ni flera dagar i förväg kan Sammat skicka en påminnelse dagen innan eller samma morgon, och be alla <em>bekräfta</em> eller <em>avboka</em>. Avbokade försvinner från listan.
+          Länken i mejlet öppnar en sida där man trycker själv, så att skräppostfilter inte avbokar någon.</p>
+      </div>
+      <img src="img/mail-reminder.png" alt="Påminnelse med Bekräfta och Avboka" />
+    </div>
+
+    <h2>Funktioner</h2>
+    <div class="features">
+      <div class="feature"><h3>Ingen inloggning</h3><p>Beställare anger bara namn och e-post. Rundor skyddas med en slumpad PIN, admin med en egen PIN.</p></div>
+      <div class="feature"><h3>Swish utan avtal</h3><p>Privat-Swish via QR-kod och swish://-länk med förifyllt belopp och meddelande. Inget företagsavtal eller certifikat.</p></div>
+      <div class="feature"><h3>Kvittopris</h3><p>Justera vad var och en ska betala efter kvittot innan betalningsmejlet går ut. Bocka av vem som swishat.</p></div>
+      <div class="feature"><h3>Flera rundor</h3><p>Olika rundor, ställen och datum samtidigt, med egen numrering från #1 och eget Swish-nummer.</p></div>
+      <div class="feature"><h3>Rensar efter sig</h3><p>Avsluta en runda så raderas alla namn och e-postadresser på riktigt. Gamla rundor rensas automatiskt.</p></div>
+      <div class="feature"><h3>Litet och självhostat</h3><p>En container, en SQLite-fil. Node.js + Express. Mejl via valfri SMTP (t.ex. Brevo).</p></div>
+    </div>
+
+    <h2>Fler bilder</h2>
+    <div class="gallery">
+      <figure><img src="img/start.png" alt="Startsidan" /><figcaption>Startsidan med pågående rundor</figcaption></figure>
+      <figure><img src="img/pay-mobile.png" alt="Betalningssidan" /><figcaption>Betalningssidan i mobilen</figcaption></figure>
+      <figure><img src="img/answer.png" alt="Bekräfta eller avboka" /><figcaption>Bekräfta eller avboka</figcaption></figure>
+      <figure><img src="img/manage-reminder.png" alt="Status för påminnelse" /><figcaption>Status: bekräftat, väntar, avbokat</figcaption></figure>
+      <figure><img src="img/admin.png" alt="Admin" /><figcaption>Admin: ställen, menyer och alla rundor</figcaption></figure>
+    </div>
+
+    <h2 id="installera">Installera</h2>
+    <p>Du behöver en server med Podman eller Docker och en reverse proxy med HTTPS (t.ex. Caddy). Imagen byggs automatiskt till
+      <code>ghcr.io/lyzio/sammat</code> för amd64 och arm64.</p>
+<pre><code># 1. En mapp med tre filer
+mkdir -p ~/sammat && cd ~/sammat
+curl -LO https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat-compose.yaml
+curl -L -o sammat.env https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat.env.example
+curl -LO https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat.caddy
+chmod 600 sammat.env &amp;&amp; nano sammat.env        # PIN, adress, SMTP
+
+# 2. Plats för databasen (rootless podman: ägd av din användare)
+sudo mkdir -p /opt/container-data/sammat/data
+sudo chown -R $(id -u):$(id -g) /opt/container-data/sammat
+
+# 3. Starta
+podman-compose -f sammat-compose.yaml up -d      # eller: docker compose -f sammat-compose.yaml up -d
+podman logs sammat</code></pre>
+    <p>Peka sedan din reverse proxy på <code>127.0.0.1:8102</code> (se <code>sammat.caddy</code>), gå till <code>/admin</code>, logga in med din admin-PIN och lägg in ställen och menyer.</p>
+
+    <h3 style="margin-top:28px">Uppdatera</h3>
+<pre><code>podman-compose -f sammat-compose.yaml pull
+podman-compose -f sammat-compose.yaml up -d</code></pre>
+
+    <h3 style="margin-top:28px">Inställningar (<code>sammat.env</code>)</h3>
+    <table>
+      <tr><th>Variabel</th><th>Betydelse</th></tr>
+      <tr><td><code>ADMIN_PIN</code></td><td>PIN för <code>/admin</code> (ställen, menyer, alla rundor). Minst 4 tecken.</td></tr>
+      <tr><td><code>PUBLIC_URL</code></td><td>Den publika adressen, används i länkar i mejl.</td></tr>
+      <tr><td><code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code></td><td>SMTP för mejl (valfritt). Port 465 = TLS, annars STARTTLS.</td></tr>
+      <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>Sammat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
+      <tr><td><code>PURGE_DAYS</code></td><td>Rundor raderas så här många dagar efter sitt datum (standard 7).</td></tr>
+      <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
+    </table>
+
+    <h2>Integritet</h2>
+    <p class="muted">Sammat sparar namn, e-post och beställning per runda. När rundan avslutas raderas allt med <code>secure_delete</code>, så att det inte ligger kvar i databasfilen.
+      Rundor som är äldre än <code>PURGE_DAYS</code> dagar efter sitt datum raderas automatiskt. Inga spårare och inga externa resurser – typsnitten serveras lokalt.</p>
+
+    <footer>
+      Sammat är fri programvara under <a href="https://github.com/lyzio/SamMat/blob/main/LICENSE">GNU GPL v3</a>. ·
+      <a href="https://github.com/lyzio/SamMat">GitHub</a> ·
+      Swish är ett varumärke som tillhör Getswish AB; Sammat har ingen koppling till Swish.
+    </footer>
+  </div>
+</body>
+</html>

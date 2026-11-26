@@ -1,0 +1,11 @@
+# Caddy site for Sammat. Import it from your main Caddyfile: import sammat.caddy
+sammat.example.com {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+	reverse_proxy 127.0.0.1:8102
+}

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Sammat – Bekräfta</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="topbar"><a href="/" class="logo">Sammat</a></div>
+    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+  </div>
+  <script>
+    const appEl = document.getElementById('app');
+    const token = location.pathname.split('/').pop();
+    const wanted = new URLSearchParams(location.search).get('a'); // 'ja' | 'nej' from the mail button
+
+    function render(o, msg) {
+      const state = o.cancelled
+        ? '<span class="st no">Avbokad</span>'
+        : o.confirmed ? '<span class="st yes">✓ Bekräftad</span>' : '<span class="st wait">Inte besvarad</span>';
+      appEl.innerHTML = `
+        <h1>${esc(o.title)}</h1>
+        <div class="info"><span>${esc(o.placeName)}</span><span>För <strong>${esc(dayWord(o.eventDate))}</strong></span>
+          ${o.foodEta ? `<span>Mat ca <strong>${esc(o.foodEta)}</strong></span>` : ''}</div>
+        <div class="box">
+          <div><strong>#${o.orderNumber}</strong> ${esc(o.orderText)}</div>
+          <div style="margin-top:8px">${esc(o.customerName)} · ${state}</div>
+        </div>
+        ${msg ? `<p style="margin-top:16px;font-size:1.05rem">${msg}</p>` : ''}
+        ${o.canChange ? `
+          <div class="row" style="margin-top:16px">
+            <button class="go" data-a="yes" style="flex:1;padding:14px;font-size:1rem;${wanted === 'ja' && !o.confirmed ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.confirmed ? 'disabled' : ''}>✓ Jag vill ha maten</button>
+            <button class="danger" data-a="no" style="flex:1;padding:14px;font-size:1rem;${wanted === 'nej' && !o.cancelled ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.cancelled ? 'disabled' : ''}>✕ Avboka</button>
+          </div>`
+        : `<p class="muted" style="margin-top:16px">Beställningen är stängd – kontakta ${esc(o.creatorName)} om något ska ändras.</p>`}
+        ${!o.cancelled ? '' : `<p class="muted" style="margin-top:14px">Ångrat dig? Tryck på "Jag vill ha maten" så länge beställningen är öppen.</p>`}
+        ${o.cancelled && o.paid ? `<p class="muted">Du har redan swishat – ${esc(o.creatorName)} löser återbetalningen.</p>` : ''}`;
+      appEl.querySelectorAll('[data-a]').forEach((b) => {
+        b.onclick = async () => {
+          b.disabled = true;
+          try {
+            const res = await api('/api/answer/' + encodeURIComponent(token), 'POST', { answer: b.dataset.a });
+            render(res, b.dataset.a === 'yes' ? 'Tack! Din beställning är bekräftad. 👍' : 'Din beställning är avbokad.');
+          } catch (e) {
+            alert(e.message);
+            b.disabled = false;
+          }
+        };
+      });
+    }
+
+    api('/api/answer/' + encodeURIComponent(token))
+      .then((o) => render(o, ''))
+      .catch((e) => { appEl.innerHTML = `<h1>Hittades inte</h1><p class="muted">${esc(e.message)}</p>`; });
+  </script>
+</body>
+</html>

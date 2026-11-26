@@ -1,0 +1,13 @@
+# Sammat – compose for podman-compose / docker compose.
+# Put this file, sammat.env and sammat.caddy in the same folder, e.g. /home/lyzio/podman-files/sammat/
+services:
+  sammat:
+    image: ghcr.io/lyzio/sammat:latest
+    container_name: sammat
+    restart: unless-stopped
+    env_file:
+      - sammat.env
+    ports:
+      - "127.0.0.1:8102:3000"
+    volumes:
+      - /opt/container-data/sammat/data:/app/data

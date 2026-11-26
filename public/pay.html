@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Sammat – Betala</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="topbar"><a href="/" class="logo">Sammat</a></div>
+    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+  </div>
+  <script>
+    const appEl = document.getElementById('app');
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const token = location.pathname.split('/').pop();
+
+    (async () => {
+      const res = await fetch('/api/pay/' + encodeURIComponent(token));
+      const o = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        appEl.innerHTML = `<h1>Hittades inte</h1><p class="muted">${esc(o.error || 'Länken fungerar inte längre.')}</p>`;
+        return;
+      }
+      const changed = o.amount !== o.estimated;
+      appEl.innerHTML = `
+        <h1>${o.paid ? 'Betalt – tack!' : 'Att betala'}</h1>
+        <p class="muted">${esc(o.customerName)} · ${esc(o.placeName)}</p>
+        <div class="box">
+          <div><strong>#${o.orderNumber}</strong> ${esc(o.orderText)}</div>
+          <div class="amount">${o.amount} kr</div>
+          ${changed ? `<div class="muted">Justerat efter kvittot – menypriset var ${o.estimated} kr.</div>` : ''}
+          <div class="muted" style="margin-top:4px">Till: ${esc(o.swishNumber)} · Meddelande: ”${esc(o.swishMessage)}”</div>
+        </div>
+        ${o.paid ? '<p class="muted">Admin har markerat den här beställningen som betald.</p>' : `
+          ${isMobile ? '' : `<div class="qr">${o.qrSvg}</div><p class="muted center">Skanna med Swish-appen</p>`}
+          <a class="swish" href="${esc(o.swishAppUrl)}">Öppna Swish</a>
+          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>Visa QR-kod</summary><div class="qr">${o.qrSvg}</div></details>` : ''}`}`;
+    })();
+  </script>
+</body>
+</html>

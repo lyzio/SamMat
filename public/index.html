@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Sambeställning</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="topbar"><a href="/" class="logo">Sammat</a></div>
+    <div id="app"><div class="card"><p class="muted">Laddar…</p></div></div>
+    <div class="foot"><a href="/admin">Admin</a></div>
+  </div>
+
+  <script>
+    const appEl = document.getElementById('app');
+
+    async function load(first) {
+      let data;
+      try { data = await api('/api/rounds'); } catch (e) {
+        appEl.innerHTML = `<div class="card"><h1>Kunde inte ladda</h1><p class="muted">${esc(e.message)}</p></div>`;
+        return;
+      }
+      const rounds = data.rounds;
+      // Exactly one round that is open: go straight to it
+      if (first && rounds.length === 1 && rounds[0].isOpen) {
+        location.replace('/r/' + rounds[0].slug);
+        return;
+      }
+      const item = (r) => `
+        <a class="round-item ${r.isOpen ? '' : 'closed'}" href="/r/${esc(r.slug)}">
+          <h2>${esc(r.title)}${r.isToday ? '' : ` <span class="date-tag">${esc(dayWord(r.eventDate))}</span>`}</h2>
+          <div class="info">
+            ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
+            <span>av ${esc(r.creatorName)}</span>
+            <span>${r.orderCount} beställda</span>
+          </div>
+          <div class="info">
+            ${r.isOpen
+              ? (r.closeAt ? `<span>Beställ senast <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : '<span class="badge open">Öppen</span>')
+              : '<span class="badge closed">Stängd</span>'}
+            ${r.foodEta ? `<span>Mat ca <strong>${esc(r.foodEta)}</strong></span>` : ''}
+          </div>
+        </a>`;
+
+      appEl.innerHTML = rounds.length
+        ? `<h1 style="margin-bottom:14px">${rounds.length > 1 ? 'Pågående sambeställningar' : 'Pågående sambeställning'}</h1>
+           <div class="round-list">${rounds.map(item).join('')}</div>
+           <a class="cta" href="/ny">+ Starta en egen sambeställning</a>`
+        : `<div class="card">
+             <h1>Ingen sambeställning just nu</h1>
+             <p class="muted">Sugen? Starta en – du får en länk att dela och en PIN-kod för att hantera den.</p>
+             <a class="cta" href="/ny">+ Starta en sambeställning</a>
+           </div>`;
+    }
+
+    load(true);
+    setInterval(() => load(false), 30000);
+  </script>
+</body>
+</html>

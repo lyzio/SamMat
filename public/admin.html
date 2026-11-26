@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Admin</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div><a href="/" class="logo">Sammat</a> <span class="muted">admin</span></div>
+      <div class="row" style="flex:0 0 auto">
+        <a href="/">Startsidan</a>
+        <button id="logout" class="secondary small" hidden>Logga ut</button>
+      </div>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <script>
+    const el = document.getElementById('content');
+    let data = null;
+    let selectedPlace = null;
+    let timer = null;
+
+    async function init() {
+      clearInterval(timer);
+      try {
+        data = await api('/api/admin/overview');
+      } catch (e) {
+        document.getElementById('logout').hidden = true;
+        if (e.status === 401) pinLogin(el, { title: 'Admin', hint: 'Ställen och menyer.', url: '/api/admin/login', onOk: init });
+        else el.innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p></div>`;
+        return;
+      }
+      document.getElementById('logout').hidden = false;
+      el.innerHTML = '<div id="rounds"></div><div id="places"></div><div id="mailtest"></div>';
+      renderRounds(); renderPlaces(); renderMailTest();
+      timer = setInterval(async () => {
+        try { data = await api('/api/admin/overview'); renderRounds(); } catch { /* ignore */ }
+      }, 15000);
+    }
+
+    async function reload() {
+      data = await api('/api/admin/overview');
+      renderRounds(); renderPlaces();
+    }
+
+    // ---------- Rounds ----------
+    function renderRounds() {
+      const rows = data.rounds.map((r) => `
+        <tr>
+          <td><a href="/r/${esc(r.slug)}" style="font-weight:700">${esc(r.title)}</a>${r.name ? `<div class="muted" style="font-size:.8rem">${esc(r.placeName)}</div>` : ''}</td>
+          <td>${esc(r.creatorName)}<div class="muted" style="font-size:.8rem">${esc(r.creatorEmail)}</div></td>
+          <td><span class="badge ${r.isOpen ? 'open' : 'closed'}">${r.isOpen ? 'Öppen' : 'Stängd'}</span>
+            ${r.isOpen && r.closeAt ? `<div class="muted" style="font-size:.8rem">stänger ${esc(whenShort(r.closeAt))}</div>` : ''}</td>
+          <td class="r">${r.orderCount}</td>
+          <td><code>${esc(r.pin)}</code></td>
+          <td style="font-size:.85rem">${esc(dayWord(r.eventDate))}<div class="muted" style="font-size:.75rem">skapad ${new Date(r.createdAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}</div></td>
+          <td class="r" style="white-space:nowrap">
+            <a href="/r/${esc(r.slug)}/admin" class="muted" style="margin-right:8px">Hantera</a>
+            <button class="danger small" data-end-round="${r.id}" data-title="${esc(r.title)}" data-count="${r.orderCount}">Avsluta</button></td>
+        </tr>`).join('');
+      document.getElementById('rounds').innerHTML = `
+        <div class="card">
+          <h2>Pågående rundor <span class="muted">(${data.rounds.length})</span></h2>
+          ${data.rounds.length ? `<div class="table-scroll"><table>
+            <thead><tr><th>Runda</th><th>Skapad av</th><th>Status</th><th class="r">Best.</th><th>PIN</th><th>Datum</th><th></th></tr></thead>
+            <tbody>${rows}</tbody></table></div>` : '<p class="muted">Inga rundor just nu.</p>'}
+        </div>`;
+    }
+
+    // ---------- Places & menus ----------
+    function renderPlaces() {
+      if (selectedPlace === null || !data.places.some((p) => p.id === selectedPlace)) selectedPlace = data.places[0]?.id ?? null;
+      const placeOpts = data.places.map((p) => `<option value="${p.id}" ${p.id === selectedPlace ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+      const menu = data.menuItems.filter((m) => m.place_id === selectedPlace);
+      const opts = data.options.filter((o) => o.place_id === selectedPlace);
+
+      document.getElementById('places').innerHTML = `
+        <div class="card">
+          <h2>Ställen &amp; menyer</h2>
+          <form id="addPlace" class="row">
+            <div><label for="pName">Nytt ställe</label><input id="pName" type="text" required maxlength="60" placeholder="T.ex. Pizzeria Palma" /></div>
+            <button type="submit">Lägg till</button>
+          </form>
+          ${!data.places.length ? '' : `
+          <div class="row" style="margin-top:18px">
+            <div><label for="editPlace">Redigera ställe</label><select id="editPlace">${placeOpts}</select></div>
+            <button class="secondary" id="renamePlace">Byt namn</button>
+            <button class="danger" id="delPlace">Ta bort</button>
+          </div>
+          <div class="grid-2" style="margin-top:12px">
+            <div>
+              <h2 style="margin-top:12px">Produkter</h2>
+              <form id="addMenu" class="row">
+                <div><label for="mName">Produkt</label><input id="mName" type="text" required maxlength="80" placeholder="Vesuvio" /></div>
+                <div style="max-width:110px;min-width:90px"><label for="mPrice">Pris kr</label><input id="mPrice" type="number" min="0" required placeholder="115" /></div>
+                <button type="submit">+</button>
+              </form>
+              <table><tbody>
+                ${menu.map((m) => `<tr><td>${esc(m.name)}</td><td class="r">${m.price} kr</td>
+                  <td class="r" style="white-space:nowrap"><button class="secondary small" data-edit-menu="${m.id}">✎</button>
+                  <button class="danger small" data-del-menu="${m.id}">✕</button></td></tr>`).join('') || '<tr><td class="muted">Inga produkter – stället syns inte förrän det har minst en.</td></tr>'}
+              </tbody></table>
+            </div>
+            <div>
+              <h2 style="margin-top:12px">Tillval &amp; bortval</h2>
+              <form id="addOpt" class="row">
+                <div style="max-width:120px;min-width:100px"><label for="oKind">Typ</label>
+                  <select id="oKind"><option value="addon">Tillval</option><option value="removal">Bortval</option></select></div>
+                <div><label for="oName">Namn</label><input id="oName" type="text" required maxlength="60" placeholder="Extra ost / Utan lök" /></div>
+                <div style="max-width:90px;min-width:80px"><label for="oPrice">Pris</label><input id="oPrice" type="number" min="0" value="0" /></div>
+                <button type="submit">+</button>
+              </form>
+              <table><tbody>
+                ${opts.map((o) => `<tr><td>${o.kind === 'addon' ? 'Tillval' : 'Bortval'}</td><td>${esc(o.name)}</td>
+                  <td class="r">${o.kind === 'addon' ? (o.price ? '+' + o.price + ' kr' : '0 kr') : ''}</td>
+                  <td class="r"><button class="danger small" data-del-opt="${o.id}">✕</button></td></tr>`).join('') || '<tr><td class="muted">Inga tillval/bortval.</td></tr>'}
+              </tbody></table>
+            </div>
+          </div>`}
+        </div>`;
+
+      const $ = (id) => document.getElementById(id);
+      $('addPlace').onsubmit = act(async (e) => {
+        e.preventDefault();
+        const r = await api('/api/admin/places', 'POST', { name: $('pName').value });
+        selectedPlace = r.id;
+        await reload();
+      });
+      if (!data.places.length) return;
+      $('editPlace').onchange = () => { selectedPlace = Number($('editPlace').value); renderPlaces(); };
+      $('renamePlace').onclick = act(async () => {
+        const cur = data.places.find((p) => p.id === selectedPlace);
+        const name = prompt('Nytt namn', cur.name);
+        if (!name || name === cur.name) return;
+        await api(`/api/admin/places/${selectedPlace}`, 'PATCH', { name });
+        await reload();
+      });
+      $('delPlace').onclick = act(async () => {
+        const cur = data.places.find((p) => p.id === selectedPlace);
+        if (!confirm(`Ta bort "${cur.name}" med hela menyn?`)) return;
+        await api(`/api/admin/places/${selectedPlace}`, 'DELETE');
+        selectedPlace = null;
+        await reload();
+      });
+      $('addMenu').onsubmit = act(async (e) => {
+        e.preventDefault();
+        await api('/api/admin/menu', 'POST', { placeId: selectedPlace, name: $('mName').value, price: Number($('mPrice').value) });
+        await reload();
+        $('mName').focus();
+      });
+      $('addOpt').onsubmit = act(async (e) => {
+        e.preventDefault();
+        const kind = $('oKind').value;
+        await api('/api/admin/options', 'POST', { placeId: selectedPlace, kind, name: $('oName').value, price: Number($('oPrice').value || 0) });
+        await reload();
+        $('oKind').value = kind;
+        $('oName').focus();
+      });
+    }
+
+    function renderMailTest() {
+      document.getElementById('mailtest').innerHTML = `
+        <div class="card">
+          <h2>Mejl</h2>
+          ${data.mailConfigured ? `
+            <div class="row"><div><label for="testTo">Skicka testmejl till</label><input id="testTo" type="email" placeholder="din@adress.se" /></div>
+            <button class="secondary" id="mailTest">Skicka test</button></div>`
+          : '<p class="muted">Inte konfigurerat – lägg in SMTP_* och MAIL_FROM i sammat.env.</p>'}
+        </div>`;
+      const b = document.getElementById('mailTest');
+      if (b) b.onclick = act(async () => {
+        await api('/api/admin/mail/test', 'POST', { to: document.getElementById('testTo').value.trim() });
+        alert('Testmejl skickat.');
+      });
+    }
+
+    el.addEventListener('click', act(async (e) => {
+      const t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.endRound) {
+        if (!confirm(`Avsluta "${t.dataset.title}"? ${t.dataset.count} beställningar raderas permanent.`)) return;
+        await api(`/api/admin/rounds/${t.dataset.endRound}/end`, 'POST', {});
+        await reload();
+      } else if (t.dataset.editMenu) {
+        const m = data.menuItems.find((x) => x.id === Number(t.dataset.editMenu));
+        const name = prompt('Produkt', m.name);
+        if (name === null) return;
+        const price = prompt('Pris (kr)', m.price);
+        if (price === null) return;
+        await api(`/api/admin/menu/${m.id}`, 'PATCH', { name, price: Number(price) });
+        await reload();
+      } else if (t.dataset.delMenu) {
+        await api(`/api/admin/menu/${t.dataset.delMenu}`, 'DELETE'); await reload();
+      } else if (t.dataset.delOpt) {
+        await api(`/api/admin/options/${t.dataset.delOpt}`, 'DELETE'); await reload();
+      }
+    }));
+
+    document.getElementById('logout').onclick = async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      location.reload();
+    };
+
+    init();
+  </script>
+</body>
+</html>
