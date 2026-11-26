@@ -102,6 +102,7 @@
           <div class="info">
             ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
             ${r.locationName ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
+            ${r.companyName ? `<span>🏢 ${esc(r.companyName)}</span>` : ''}
             <span>av ${esc(r.creatorName)}</span>
             <span>Swish <strong>${esc(r.swishNumber)}</strong> ${r.payMode === 'before' ? '(betalas direkt)' : '(betalas efter)'}</span>
             <span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>
@@ -312,6 +313,9 @@
                 ${[[0, 'Nej'], [2, '2 timmar efter betalningsmejlet'], [4, '4 timmar efter'], [24, 'Dagen efter (24 h)'], [48, 'Två dagar efter (48 h)']]
                   .map(([v, l]) => `<option value="${v}" ${r.payRemindHours === v ? 'selected' : ''}>${l}</option>`).join('')}
               </select>` : ''}
+              ${COMPANIES.length ? `<label for="sComp">För företag</label>
+              <select id="sComp"><option value="">Alla i huset</option>
+                ${COMPANIES.map((c) => `<option value="${c.id}" ${c.id === r.companyId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : ''}
               <label for="sPay">Betalning</label>
               <select id="sPay">
                 <option value="after" ${r.payMode === 'after' ? 'selected' : ''}>Efter maten – betalningsmejl</option>
@@ -338,6 +342,7 @@
           swishNumber: $('sSwish').value.trim(),
           eventDate: $('sDate').value,
           payMode: $('sPay').value,
+          ...($('sComp') ? { companyId: $('sComp').value ? Number($('sComp').value) : null } : {}),
           ...($('sPayRemind') ? { payRemindHours: Number($('sPayRemind').value) } : {}),
           closeAt: $('sClose').value ? new Date($('sClose').value).toISOString() : null,
           foodEta: $('sEta').value,
@@ -408,7 +413,8 @@
       location.reload();
     };
 
-    init();
+    let COMPANIES = [];
+    api('/api/rounds').then((d) => { COMPANIES = d.companies || []; }).catch(() => {}).finally(init);
   </script>
 </body>
 </html>

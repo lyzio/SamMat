@@ -28,6 +28,9 @@
       const locs = rounds.locations || [];
       let loc = store.get('sammat_location');
       if (loc && !locs.some((l) => String(l.id) === loc)) loc = '';
+      const comps = rounds.companies || [];
+      let comp = store.get('sammat_company');
+      if (comp && !comps.some((c) => String(c.id) === comp)) comp = '';
       if (!places.length) {
         appEl.innerHTML = '<h1>Inga ställen än</h1><p class="muted">En admin behöver lägga in ställen och menyer först.</p>';
         return;
@@ -43,6 +46,12 @@
           </select>` : ''}
           <label for="place">Ställe</label>
           <select id="place" required></select>
+
+          ${comps.length ? `<label for="comp">För företag</label>
+          <select id="comp">
+            <option value="">Alla i huset</option>
+            ${comps.map((c) => `<option value="${c.id}" ${String(c.id) === comp ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          </select>` : ''}
 
           <label for="name">Namn på rundan <span class="muted">(valfritt)</span></label>
           <input id="name" type="text" maxlength="50" placeholder="T.ex. Fredagspizza plan 3" />
@@ -156,6 +165,7 @@
           swishNumber: $('swish').value.trim(),
           eventDate: $('date').value,
           payMode: $('payMode').value,
+          companyId: $('comp') && $('comp').value ? Number($('comp').value) : null,
           sharedLabel: $('shLabel').value.trim(),
           sharedCost: Number($('shCost').value || 0),
           payRemindHours: $('payRemind') ? Number($('payRemind').value) : 0,
@@ -169,6 +179,7 @@
         try {
           const r = await api('/api/rounds', 'POST', body);
           store.set('sammat_name', body.creatorName);
+          if ($('comp')) store.set('sammat_company', $('comp').value);
           store.set('sammat_swish', body.swishNumber);
           if (body.creatorEmail) store.set('sammat_email', body.creatorEmail);
           done(r, body.creatorEmail);

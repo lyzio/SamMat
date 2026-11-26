@@ -22,6 +22,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
 - **Mejl** via valfri SMTP-server: *Maten är här*, betalningsmejl, påminnelser och orderlista.
 - **Flera orter/kontor**: koppla varje ställe till en ort. Startsidan får en ortväljare, och webhooks kan skickas per ort. Utan inlagda orter syns inget av det.
+- **Flera företag i samma hus** (t.ex. ett kontorshotell): en runda kan gälla ett företag eller *Alla i huset*. Startsidan får en företagsväljare, och webhooks kan skickas per företag. Det är ett filter, ingen spärr.
 - **Installera som app** (PWA) från startsidan: en knapp i Chrome, Edge och Android, och en instruktion för Safari på iPhone, iPad och Mac.
 - **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor.
 - **Rensar efter sig**: när en runda avslutas raderas namn och e-post på riktigt. Gamla rundor rensas automatiskt.
@@ -74,7 +75,7 @@ Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *W
 
 ```json
 { "event": "round.created", "text": "🍕 Maja startar en sambeställning: …", "link": "https://…/r/abc123",
-  "round": { "slug": "abc123", "title": "…", "place": "…", "location": "Stockholm", "creator": "…", "date": "2026-11-27", "closeAt": "…", "foodEta": "12:15", "isOpen": true } }
+  "round": { "slug": "abc123", "title": "…", "place": "…", "location": "Stockholm", "company": "Acme AB", "creator": "…", "date": "2026-11-27", "closeAt": "…", "foodEta": "12:15", "isOpen": true } }
 ```
 
 Händelser: `round.created`, `round.closed` och `food.arrived`.

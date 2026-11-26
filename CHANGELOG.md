@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.0 – 2026-11-26
+- Companies (e.g. an office hotel): a round is for one company or "Alla i huset". Company picker on the start page next to the location picker, chosen when starting a round, changeable in the round settings.
+- Webhooks can be limited to companies (each company's own Teams channel). Company shown in webhook text and JSON.
+- It is a filter, not access control: "Alla företag" shows every round.
+
 ## 2.4.0 – 2026-11-26
 - Locations (offices/cities): a place belongs to one location, or none (shown everywhere). Location picker on the start page and in "Starta en sambeställning", remembered per browser.
 - Webhooks can be limited to certain locations, e.g. one Teams channel per office.

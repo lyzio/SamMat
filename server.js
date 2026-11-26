@@ -164,6 +164,12 @@ db.exec('CREATE TABLE IF NOT EXISTS locations (id INTEGER PRIMARY KEY AUTOINCREM
 addCols('places', [['location_id', 'INTEGER REFERENCES locations(id) ON DELETE SET NULL']]);
 const listLocations = () => db.prepare('SELECT id, name FROM locations ORDER BY name COLLATE NOCASE').all();
 
+// v2.5: companies (e.g. an office hotel). A round is for one company, or none = everyone in the building.
+db.exec('CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
+addCols('rounds', [['company_id', 'INTEGER REFERENCES companies(id) ON DELETE SET NULL']]);
+const listCompanies = () => db.prepare('SELECT id, name FROM companies ORDER BY name COLLATE NOCASE').all();
+const companyIdOr = (v) => { const id = v ? toInt(v) : null; return id && db.prepare('SELECT 1 FROM companies WHERE id = ?').get(id) ? id : null; };
+
 const getSetting = (k, d = null) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k); return r ? r.value : d; };
 const setSetting = (k, v) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, v);
 if (!getSetting('hash_salt')) setSetting('hash_salt', crypto.randomBytes(32).toString('hex'));
@@ -251,8 +257,9 @@ function swishFor(order, round, amount) {
   };
 }
 
-const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name
-  FROM rounds r JOIN places p ON p.id = r.place_id LEFT JOIN locations l ON l.id = p.location_id`;
+const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name, co.name AS company_name
+  FROM rounds r JOIN places p ON p.id = r.place_id LEFT JOIN locations l ON l.id = p.location_id
+  LEFT JOIN companies co ON co.id = r.company_id`;
 const getRoundBySlug = (slug) => db.prepare(`${ROUND_SELECT} WHERE r.slug = ?`).get(clean(slug, 12).toLowerCase());
 const getRoundById = (id) => db.prepare(`${ROUND_SELECT} WHERE r.id = ?`).get(id);
 const ordersOf = (roundId) => db.prepare('SELECT * FROM orders WHERE round_id = ? AND cancelled_at IS NULL ORDER BY nr').all(roundId);
@@ -276,6 +283,8 @@ function publicRound(r) {
     placeName: r.place_name,
     locationId: r.location_id ?? null,
     locationName: r.location_name || '',
+    companyId: r.company_id ?? null,
+    companyName: r.company_name || '',
     creatorName: r.creator_name,
     eventDate: r.event_date,
     isToday: r.event_date === todayStr(),
@@ -446,7 +455,7 @@ app.get('/api/places', (req, res) => {
 
 app.get('/api/rounds', (req, res) => {
   const rounds = db.prepare(`${ROUND_SELECT} ORDER BY r.event_date, r.is_open DESC, r.created_at DESC`).all();
-  res.json({ mailConfigured, locations: listLocations(), rounds: rounds.map(publicRound) });
+  res.json({ mailConfigured, locations: listLocations(), companies: listCompanies(), rounds: rounds.map(publicRound) });
 });
 
 const createLog = new Map(); // ip -> [timestamps]
@@ -471,6 +480,7 @@ app.post('/api/rounds', async (req, res) => {
   const reminder = parseFuture(req.body.reminderAt, 'påminnelsetid');
   const confirm = Boolean(req.body.confirm) && Boolean(reminder.value);
   const payMode = req.body.payMode === 'before' ? 'before' : 'after';
+  const companyId = companyIdOr(req.body.companyId);
   const sharedCost = Math.max(0, Math.min(100000, toInt(req.body.sharedCost) || 0));
   const sharedLabel = clean(req.body.sharedLabel, 40);
   const payRemindHours = [0, 2, 4, 24, 48].includes(toInt(req.body.payRemindHours)) ? toInt(req.body.payRemindHours) : 0;
@@ -490,10 +500,10 @@ app.post('/api/rounds', async (req, res) => {
   const pin = newPin();
   const info = db.prepare(`
     INSERT INTO rounds (slug, pin, name, place_id, swish_number, creator_name, creator_email, food_eta, close_at, mail_orders,
-                        event_date, reminder_at, confirm, pay_mode, shared_cost, shared_label, pay_remind_hours, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_date, reminder_at, confirm, pay_mode, shared_cost, shared_label, pay_remind_hours, company_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(slug, pin, name, placeId, swishNumber, creatorName, creatorEmail, foodEta, close.value, mailOrders ? 1 : 0,
-    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, sharedCost, sharedLabel, payRemindHours, new Date().toISOString());
+    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, sharedCost, sharedLabel, payRemindHours, companyId, new Date().toISOString());
   recent.push(now);
   createLog.set(req.ip, recent);
 
@@ -719,6 +729,7 @@ app.patch('/api/rounds/:slug', requireRound, (req, res) => {
   }
   if ('confirm' in b) set.confirm = b.confirm ? 1 : 0;
   if ('payMode' in b) set.pay_mode = b.payMode === 'before' ? 'before' : 'after';
+  if ('companyId' in b) set.company_id = companyIdOr(b.companyId);
   if ('sharedCost' in b) set.shared_cost = Math.max(0, Math.min(100000, toInt(b.sharedCost) || 0));
   if ('sharedLabel' in b) set.shared_label = clean(b.sharedLabel, 40);
   if ('payRemindHours' in b) set.pay_remind_hours = [0, 2, 4, 24, 48].includes(toInt(b.payRemindHours)) ? toInt(b.payRemindHours) : 0;
@@ -1035,6 +1046,7 @@ async function onClosed(r) {
 const EVENT_TEXT = {
   'round.created': (r) => `🍕 ${r.creator_name} startar en sambeställning: ${roundTitle(r)}` +
     `${r.name ? ` (${[r.place_name, r.location_name].filter(Boolean).join(', ')})` : r.location_name ? ` (${r.location_name})` : ''}` +
+    `${r.company_name ? ` för ${r.company_name}` : ''}` +
     `${r.event_date !== todayStr() ? ` för ${dateSv(r.event_date)}` : ''}${r.close_at ? ` – beställ senast ${dayTimeSv(r.close_at)}` : ''}`,
   'round.closed': (r) => `🔒 ${roundTitle(r)} är stängd – ${db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n} beställningar.`,
   'food.arrived': (r, x) => `🍽️ Maten från ${r.place_name} är här! (${roundTitle(r)})${x && x.extra ? ` ${x.extra}` : ''}`
@@ -1060,7 +1072,7 @@ function hookPayload(format, event, r, text) {
   }
   return { // json
     event, text, link,
-    round: { slug: r.slug, title: roundTitle(r), place: r.place_name, location: r.location_name || null, creator: r.creator_name, date: r.event_date,
+    round: { slug: r.slug, title: roundTitle(r), place: r.place_name, location: r.location_name || null, company: r.company_name || null, creator: r.creator_name, date: r.event_date,
       closeAt: r.close_at, foodEta: r.food_eta, isOpen: Boolean(r.is_open) }
   };
 }
@@ -1079,6 +1091,8 @@ function emit(event, r, extra) {
     if (h.events && !h.events.includes(event)) continue;
     // Location filter: empty = all. Places without a location go to every hook.
     if (h.locations && h.locations.length && r.location_id && !h.locations.includes(r.location_id)) continue;
+    // Company filter: empty = all. Rounds for "everyone in the building" go to every hook.
+    if (h.companies && h.companies.length && r.company_id && !h.companies.includes(r.company_id)) continue;
     postHook(h, event, r, extra).catch((e) => console.error(`Webhook ${event} → ${h.url.slice(0, 40)}…:`, e.message));
   }
 }
@@ -1094,6 +1108,7 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
   res.json({
     mailConfigured,
     locations: listLocations(),
+    companies: listCompanies(),
     places: db.prepare('SELECT id, name, location_id FROM places ORDER BY name COLLATE NOCASE').all(),
     menuItems: db.prepare('SELECT id, place_id, name, price FROM menu_items ORDER BY name COLLATE NOCASE').all(),
     options: db.prepare('SELECT id, place_id, kind, name, price FROM place_options ORDER BY kind, id').all(),
@@ -1173,6 +1188,37 @@ app.delete('/api/admin/locations/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/admin/companies', requireAdmin, (req, res) => {
+  const name = clean(req.body.name, 50);
+  if (!name) return res.status(400).json({ error: 'Ange företagets namn.' });
+  try {
+    const info = db.prepare('INSERT INTO companies (name) VALUES (?)').run(name);
+    res.status(201).json({ id: Number(info.lastInsertRowid) });
+  } catch {
+    res.status(400).json({ error: 'Företaget finns redan.' });
+  }
+});
+app.patch('/api/admin/companies/:id', requireAdmin, (req, res) => {
+  const name = clean(req.body.name, 50);
+  if (!name) return res.status(400).json({ error: 'Ange företagets namn.' });
+  try {
+    db.prepare('UPDATE companies SET name = ? WHERE id = ?').run(name, toInt(req.params.id));
+    res.json({ ok: true });
+  } catch {
+    res.status(400).json({ error: 'Det namnet finns redan.' });
+  }
+});
+// Deleting a company keeps its rounds; they become "everyone in the building"
+app.delete('/api/admin/companies/:id', requireAdmin, (req, res) => {
+  const id = toInt(req.params.id);
+  db.transaction(() => {
+    db.prepare('UPDATE rounds SET company_id = NULL WHERE company_id = ?').run(id);
+    db.prepare('DELETE FROM companies WHERE id = ?').run(id);
+  })();
+  setSetting('webhooks', JSON.stringify(getHooks().map((h) => ({ ...h, companies: (h.companies || []).filter((c) => c !== id) }))));
+  res.json({ ok: true });
+});
+
 app.post('/api/admin/menu', requireAdmin, (req, res) => {
   const placeId = toInt(req.body.placeId);
   const name = clean(req.body.name, 80);
@@ -1217,7 +1263,7 @@ app.post('/api/admin/rounds/:id/end', requireAdmin, (req, res) => {
 
 const HOOK_FORMATS = ['teams', 'slack', 'discord', 'json'];
 const HOOK_EVENTS = Object.keys(EVENT_TEXT);
-app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS, locations: listLocations() }));
+app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS, locations: listLocations(), companies: listCompanies() }));
 app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
   const list = Array.isArray(req.body.hooks) ? req.body.hooks : [];
   const hooks = [];
@@ -1227,7 +1273,8 @@ app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
     hooks.push({
       url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json',
       events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS,
-      locations: Array.isArray(h.locations) ? h.locations.map(toInt).filter((l) => db.prepare('SELECT 1 FROM locations WHERE id = ?').get(l)) : []
+      locations: Array.isArray(h.locations) ? h.locations.map(toInt).filter((l) => db.prepare('SELECT 1 FROM locations WHERE id = ?').get(l)) : [],
+      companies: Array.isArray(h.companies) ? h.companies.map(toInt).filter((c) => db.prepare('SELECT 1 FROM companies WHERE id = ?').get(c)) : []
     });
   }
   setSetting('webhooks', JSON.stringify(hooks));

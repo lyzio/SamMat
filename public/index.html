@@ -31,11 +31,16 @@
       }
       // Location filter (only when locations exist). Rounds at places without a location show everywhere.
       const locs = data.locations || [];
+      const comps = data.companies || [];
       let sel = store.get('sammat_location');
       if (sel && !locs.some((l) => String(l.id) === sel)) sel = '';
-      renderLocPick(locs, sel);
-      const rounds = data.rounds.filter((r) => !sel || !r.locationId || String(r.locationId) === sel);
-      const selName = sel ? locs.find((l) => String(l.id) === sel).name : '';
+      let selC = store.get('sammat_company');
+      if (selC && !comps.some((c) => String(c.id) === selC)) selC = '';
+      renderFilters(locs, sel, comps, selC);
+      // Rounds without location/company are for everyone, so they always show
+      const rounds = data.rounds.filter((r) => (!sel || !r.locationId || String(r.locationId) === sel)
+        && (!selC || !r.companyId || String(r.companyId) === selC));
+      const selName = [sel ? locs.find((l) => String(l.id) === sel).name : '', selC ? comps.find((c) => String(c.id) === selC).name : ''].filter(Boolean).join(' · ');
       // Exactly one round that is open: go straight to it
       if (first && rounds.length === 1 && rounds[0].isOpen) {
         location.replace('/r/' + rounds[0].slug);
@@ -47,6 +52,7 @@
           <div class="info">
             ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
             ${locs.length && r.locationName && !sel ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
+            ${comps.length && r.companyName && !selC ? `<span>🏢 ${esc(r.companyName)}</span>` : ''}
             <span>av ${esc(r.creatorName)}</span>
             <span>${r.orderCount} beställda</span>
           </div>
@@ -59,25 +65,28 @@
         </a>`;
 
       appEl.innerHTML = rounds.length
-        ? `<h1 style="margin-bottom:14px">${rounds.length > 1 ? 'Pågående sambeställningar' : 'Pågående sambeställning'}${selName ? ` <span class="muted" style="font-size:1rem">i ${esc(selName)}</span>` : ''}</h1>
+        ? `<h1 style="margin-bottom:14px">${rounds.length > 1 ? 'Pågående sambeställningar' : 'Pågående sambeställning'}</h1>${selName ? `<p class="muted" style="margin:-8px 0 14px">${esc(selName)}</p>` : ''}
            <div class="round-list">${rounds.map(item).join('')}</div>
            <a class="cta" href="/ny">+ Starta en egen sambeställning</a>`
         : `<div class="card">
-             <h1>Ingen sambeställning ${selName ? `i ${esc(selName)} ` : ''}just nu</h1>
+             <h1>Ingen sambeställning just nu</h1>${selName ? `<p class="muted" style="margin-top:-2px">${esc(selName)}</p>` : ''}
              <p class="muted">Sugen? Starta en – du får en länk att dela och en PIN-kod för att hantera den.</p>
              <a class="cta" href="/ny">+ Starta en sambeställning</a>
            </div>`;
     }
 
-    function renderLocPick(locs, sel) {
+    // Location and company pickers (each only when the admin has added any)
+    function renderFilters(locs, sel, comps, selC) {
       const el = document.getElementById('locPick');
-      if (!locs.length) { el.innerHTML = ''; return; }
+      if (!locs.length && !comps.length) { el.innerHTML = ''; return; }
       if (el.querySelector('select')) return; // keep the user's open dropdown during refresh
-      el.innerHTML = `<label class="loc-pick">📍 <select id="loc" aria-label="Ort">
-        <option value="">Alla orter</option>
-        ${locs.map((l) => `<option value="${l.id}" ${String(l.id) === sel ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
-      </select></label>`;
-      document.getElementById('loc').onchange = (e) => { store.set('sammat_location', e.target.value); load(false); };
+      const pick = (id, icon, label, all, list, cur) => list.length ? `<label class="loc-pick">${icon} <select id="${id}" aria-label="${label}">
+        <option value="">${all}</option>
+        ${list.map((x) => `<option value="${x.id}" ${String(x.id) === cur ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
+      </select></label>` : '';
+      el.innerHTML = `<div class="filters">${pick('loc', '📍', 'Ort', 'Alla orter', locs, sel)}${pick('comp', '🏢', 'Företag', 'Alla företag', comps, selC)}</div>`;
+      const l = document.getElementById('loc'); if (l) l.onchange = (e) => { store.set('sammat_location', e.target.value); load(false); };
+      const c = document.getElementById('comp'); if (c) c.onchange = (e) => { store.set('sammat_company', e.target.value); load(false); };
     }
 
     renderInstall(document.getElementById('install'));
