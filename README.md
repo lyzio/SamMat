@@ -21,6 +21,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Samma som förra gången**: kryssar man i "kom ihåg" föreslås samma beställning nästa gång hos samma ställe. Det kräver både e-post och namn, och e-posten sparas bara som en HMAC-nyckel. `/integritet` förklarar vad som sparas och har "Glöm mig".
 - **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
 - **Mejl** via valfri SMTP-server: *Maten är här*, betalningsmejl, påminnelser och orderlista.
+- **Flera orter/kontor**: koppla varje ställe till en ort. Startsidan får en ortväljare, och webhooks kan skickas per ort. Utan inlagda orter syns inget av det.
 - **Installera som app** (PWA) från startsidan: en knapp i Chrome, Edge och Android, och en instruktion för Safari på iPhone, iPad och Mac.
 - **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor.
 - **Rensar efter sig**: när en runda avslutas raderas namn och e-post på riktigt. Gamla rundor rensas automatiskt.
@@ -65,7 +66,7 @@ En rad per `NYCKEL=värde`, utan citattecken. Värdena läses när containern sk
 
 Öppna JSON-endpoints (samma som sidorna själva använder):
 
-- `GET /api/rounds`: pågående rundor (titel, ställe, datum, stopptid, antal beställningar).
+- `GET /api/rounds`: pågående rundor (titel, ställe, ort, datum, stopptid, antal beställningar) och listan med orter.
 - `GET /api/rounds/<kod>`: en runda med meny och "lappar" (namn + rätt).
 - `GET /healthz`: `ok`.
 
@@ -73,7 +74,7 @@ Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *W
 
 ```json
 { "event": "round.created", "text": "🍕 Maja startar en sambeställning: …", "link": "https://…/r/abc123",
-  "round": { "slug": "abc123", "title": "…", "place": "…", "creator": "…", "date": "2026-11-27", "closeAt": "…", "foodEta": "12:15", "isOpen": true } }
+  "round": { "slug": "abc123", "title": "…", "place": "…", "location": "Stockholm", "creator": "…", "date": "2026-11-27", "closeAt": "…", "foodEta": "12:15", "isOpen": true } }
 ```
 
 Händelser: `round.created`, `round.closed` och `food.arrived`.

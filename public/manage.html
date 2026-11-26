@@ -101,6 +101,7 @@
           </div>
           <div class="info">
             ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
+            ${r.locationName ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
             <span>av ${esc(r.creatorName)}</span>
             <span>Swish <strong>${esc(r.swishNumber)}</strong> ${r.payMode === 'before' ? '(betalas direkt)' : '(betalas efter)'}</span>
             <span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>

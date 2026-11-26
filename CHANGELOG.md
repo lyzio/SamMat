@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.0 – 2026-11-26
+- Locations (offices/cities): a place belongs to one location, or none (shown everywhere). Location picker on the start page and in "Starta en sambeställning", remembered per browser.
+- Webhooks can be limited to certain locations, e.g. one Teams channel per office.
+- Fixed duplicated place name in webhook text for rounds without their own name.
+
 ## 2.3.0 – 2026-11-26
 - New look: "SamMat" logo in Bangers, headings in Bitter, text in Nunito Sans (all served locally via @fontsource).
 - Logo as an inline image in every mail; favicon and app icon.

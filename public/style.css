@@ -226,3 +226,5 @@ tr.cancelled td:last-child, tr.cancelled td:nth-last-child(2) { text-decoration:
 .install-text span { color: var(--muted); }
 .install-x { background: transparent; color: var(--muted); padding: 4px 8px; font-size: .9rem; }
 .install-x:hover { color: var(--text); }
+.loc-pick { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; font-size: .9rem; }
+.loc-pick select { width: auto; padding: 6px 30px 6px 10px; font-size: .9rem; }

@@ -159,6 +159,11 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `);
+// v2.4: locations (offices/cities). A place belongs to one location, or none = shown everywhere.
+db.exec('CREATE TABLE IF NOT EXISTS locations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
+addCols('places', [['location_id', 'INTEGER REFERENCES locations(id) ON DELETE SET NULL']]);
+const listLocations = () => db.prepare('SELECT id, name FROM locations ORDER BY name COLLATE NOCASE').all();
+
 const getSetting = (k, d = null) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k); return r ? r.value : d; };
 const setSetting = (k, v) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, v);
 if (!getSetting('hash_salt')) setSetting('hash_salt', crypto.randomBytes(32).toString('hex'));
@@ -246,7 +251,8 @@ function swishFor(order, round, amount) {
   };
 }
 
-const ROUND_SELECT = `SELECT r.*, p.name AS place_name FROM rounds r JOIN places p ON p.id = r.place_id`;
+const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name
+  FROM rounds r JOIN places p ON p.id = r.place_id LEFT JOIN locations l ON l.id = p.location_id`;
 const getRoundBySlug = (slug) => db.prepare(`${ROUND_SELECT} WHERE r.slug = ?`).get(clean(slug, 12).toLowerCase());
 const getRoundById = (id) => db.prepare(`${ROUND_SELECT} WHERE r.id = ?`).get(id);
 const ordersOf = (roundId) => db.prepare('SELECT * FROM orders WHERE round_id = ? AND cancelled_at IS NULL ORDER BY nr').all(roundId);
@@ -268,6 +274,8 @@ function publicRound(r) {
     title: roundTitle(r),
     name: r.name,
     placeName: r.place_name,
+    locationId: r.location_id ?? null,
+    locationName: r.location_name || '',
     creatorName: r.creator_name,
     eventDate: r.event_date,
     isToday: r.event_date === todayStr(),
@@ -430,14 +438,15 @@ app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }))
 // ---------- Public API ----------
 app.get('/api/places', (req, res) => {
   res.json(db.prepare(`
-    SELECT p.id, p.name, (SELECT COUNT(*) FROM menu_items m WHERE m.place_id = p.id) AS items
-    FROM places p ORDER BY p.name COLLATE NOCASE
+    SELECT p.id, p.name, p.location_id AS locationId, l.name AS locationName,
+           (SELECT COUNT(*) FROM menu_items m WHERE m.place_id = p.id) AS items
+    FROM places p LEFT JOIN locations l ON l.id = p.location_id ORDER BY p.name COLLATE NOCASE
   `).all().filter((p) => p.items > 0));
 });
 
 app.get('/api/rounds', (req, res) => {
   const rounds = db.prepare(`${ROUND_SELECT} ORDER BY r.event_date, r.is_open DESC, r.created_at DESC`).all();
-  res.json({ mailConfigured, rounds: rounds.map(publicRound) });
+  res.json({ mailConfigured, locations: listLocations(), rounds: rounds.map(publicRound) });
 });
 
 const createLog = new Map(); // ip -> [timestamps]
@@ -1024,7 +1033,8 @@ async function onClosed(r) {
 
 // ---------- Webhooks: Teams (Workflows), Slack, Discord or plain JSON ----------
 const EVENT_TEXT = {
-  'round.created': (r) => `🍕 ${r.creator_name} startar en sambeställning: ${roundTitle(r)} (${r.place_name})` +
+  'round.created': (r) => `🍕 ${r.creator_name} startar en sambeställning: ${roundTitle(r)}` +
+    `${r.name ? ` (${[r.place_name, r.location_name].filter(Boolean).join(', ')})` : r.location_name ? ` (${r.location_name})` : ''}` +
     `${r.event_date !== todayStr() ? ` för ${dateSv(r.event_date)}` : ''}${r.close_at ? ` – beställ senast ${dayTimeSv(r.close_at)}` : ''}`,
   'round.closed': (r) => `🔒 ${roundTitle(r)} är stängd – ${db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n} beställningar.`,
   'food.arrived': (r, x) => `🍽️ Maten från ${r.place_name} är här! (${roundTitle(r)})${x && x.extra ? ` ${x.extra}` : ''}`
@@ -1050,7 +1060,7 @@ function hookPayload(format, event, r, text) {
   }
   return { // json
     event, text, link,
-    round: { slug: r.slug, title: roundTitle(r), place: r.place_name, creator: r.creator_name, date: r.event_date,
+    round: { slug: r.slug, title: roundTitle(r), place: r.place_name, location: r.location_name || null, creator: r.creator_name, date: r.event_date,
       closeAt: r.close_at, foodEta: r.food_eta, isOpen: Boolean(r.is_open) }
   };
 }
@@ -1067,6 +1077,8 @@ async function postHook(h, event, r, extra) {
 function emit(event, r, extra) {
   for (const h of getHooks()) {
     if (h.events && !h.events.includes(event)) continue;
+    // Location filter: empty = all. Places without a location go to every hook.
+    if (h.locations && h.locations.length && r.location_id && !h.locations.includes(r.location_id)) continue;
     postHook(h, event, r, extra).catch((e) => console.error(`Webhook ${event} → ${h.url.slice(0, 40)}…:`, e.message));
   }
 }
@@ -1081,7 +1093,8 @@ app.post('/api/admin/login', (req, res) => {
 app.get('/api/admin/overview', requireAdmin, (req, res) => {
   res.json({
     mailConfigured,
-    places: db.prepare('SELECT id, name FROM places ORDER BY name COLLATE NOCASE').all(),
+    locations: listLocations(),
+    places: db.prepare('SELECT id, name, location_id FROM places ORDER BY name COLLATE NOCASE').all(),
     menuItems: db.prepare('SELECT id, place_id, name, price FROM menu_items ORDER BY name COLLATE NOCASE').all(),
     options: db.prepare('SELECT id, place_id, kind, name, price FROM place_options ORDER BY kind, id').all(),
     rounds: db.prepare(`${ROUND_SELECT} ORDER BY r.created_at DESC`).all().map(manageRound)
@@ -1092,7 +1105,8 @@ app.post('/api/admin/places', requireAdmin, (req, res) => {
   const name = clean(req.body.name, 60);
   if (!name) return res.status(400).json({ error: 'Ange ställets namn.' });
   try {
-    const info = db.prepare('INSERT INTO places (name) VALUES (?)').run(name);
+    const loc = req.body.locationId ? toInt(req.body.locationId) : null;
+    const info = db.prepare('INSERT INTO places (name, location_id) VALUES (?, ?)').run(name, loc && db.prepare('SELECT 1 FROM locations WHERE id = ?').get(loc) ? loc : null);
     res.status(201).json({ id: Number(info.lastInsertRowid) });
   } catch {
     res.status(400).json({ error: 'Stället finns redan.' });
@@ -1100,10 +1114,18 @@ app.post('/api/admin/places', requireAdmin, (req, res) => {
 });
 
 app.patch('/api/admin/places/:id', requireAdmin, (req, res) => {
-  const name = clean(req.body.name, 60);
-  if (!name) return res.status(400).json({ error: 'Ange ställets namn.' });
+  const id = toInt(req.params.id);
   try {
-    db.prepare('UPDATE places SET name = ? WHERE id = ?').run(name, toInt(req.params.id));
+    if ('name' in req.body) {
+      const name = clean(req.body.name, 60);
+      if (!name) return res.status(400).json({ error: 'Ange ställets namn.' });
+      db.prepare('UPDATE places SET name = ? WHERE id = ?').run(name, id);
+    }
+    if ('locationId' in req.body) {
+      const loc = req.body.locationId ? toInt(req.body.locationId) : null;
+      if (loc && !db.prepare('SELECT 1 FROM locations WHERE id = ?').get(loc)) return res.status(400).json({ error: 'Orten finns inte.' });
+      db.prepare('UPDATE places SET location_id = ? WHERE id = ?').run(loc, id);
+    }
     res.json({ ok: true });
   } catch {
     res.status(400).json({ error: 'Det namnet finns redan.' });
@@ -1116,6 +1138,38 @@ app.delete('/api/admin/places/:id', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Stället används i en aktiv runda.' });
   }
   db.prepare('DELETE FROM places WHERE id = ?').run(id);
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/locations', requireAdmin, (req, res) => {
+  const name = clean(req.body.name, 40);
+  if (!name) return res.status(400).json({ error: 'Ange ortens namn.' });
+  try {
+    const info = db.prepare('INSERT INTO locations (name) VALUES (?)').run(name);
+    res.status(201).json({ id: Number(info.lastInsertRowid) });
+  } catch {
+    res.status(400).json({ error: 'Orten finns redan.' });
+  }
+});
+app.patch('/api/admin/locations/:id', requireAdmin, (req, res) => {
+  const name = clean(req.body.name, 40);
+  if (!name) return res.status(400).json({ error: 'Ange ortens namn.' });
+  try {
+    db.prepare('UPDATE locations SET name = ? WHERE id = ?').run(name, toInt(req.params.id));
+    res.json({ ok: true });
+  } catch {
+    res.status(400).json({ error: 'Det namnet finns redan.' });
+  }
+});
+// Deleting a location keeps its places; they become "all locations"
+app.delete('/api/admin/locations/:id', requireAdmin, (req, res) => {
+  const id = toInt(req.params.id);
+  db.transaction(() => {
+    db.prepare('UPDATE places SET location_id = NULL WHERE location_id = ?').run(id);
+    db.prepare('DELETE FROM locations WHERE id = ?').run(id);
+  })();
+  const hooks = getHooks().map((h) => ({ ...h, locations: (h.locations || []).filter((l) => l !== id) }));
+  setSetting('webhooks', JSON.stringify(hooks));
   res.json({ ok: true });
 });
 
@@ -1163,7 +1217,7 @@ app.post('/api/admin/rounds/:id/end', requireAdmin, (req, res) => {
 
 const HOOK_FORMATS = ['teams', 'slack', 'discord', 'json'];
 const HOOK_EVENTS = Object.keys(EVENT_TEXT);
-app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS }));
+app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS, locations: listLocations() }));
 app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
   const list = Array.isArray(req.body.hooks) ? req.body.hooks : [];
   const hooks = [];
@@ -1172,7 +1226,8 @@ app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
     if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: `Ogiltig adress (måste börja med http:// eller https://): ${url.slice(0, 50)}` });
     hooks.push({
       url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json',
-      events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS
+      events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS,
+      locations: Array.isArray(h.locations) ? h.locations.map(toInt).filter((l) => db.prepare('SELECT 1 FROM locations WHERE id = ?').get(l)) : []
     });
   }
   setSetting('webhooks', JSON.stringify(hooks));

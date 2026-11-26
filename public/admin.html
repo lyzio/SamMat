@@ -41,8 +41,8 @@
         return;
       }
       document.getElementById('logout').hidden = false;
-      el.innerHTML = '<div id="rounds"></div><div id="places"></div><div id="hooks"></div><div id="mailtest"></div>';
-      renderRounds(); renderPlaces(); renderMailTest(); renderHooks();
+      el.innerHTML = '<div id="rounds"></div><div id="places"></div><div id="locations"></div><div id="hooks"></div><div id="mailtest"></div>';
+      renderRounds(); renderPlaces(); renderLocations(); renderMailTest(); renderHooks();
       timer = setInterval(async () => {
         try { data = await api('/api/admin/overview'); renderRounds(); } catch { /* ignore */ }
       }, 15000);
@@ -50,14 +50,39 @@
 
     async function reload() {
       data = await api('/api/admin/overview');
-      renderRounds(); renderPlaces();
+      renderRounds(); renderPlaces(); renderLocations();
+    }
+
+    // ---------- Locations ----------
+    const locName = (id) => (data.locations.find((l) => l.id === id) || {}).name || '';
+    function renderLocations() {
+      document.getElementById('locations').innerHTML = `
+        <div class="card">
+          <h2>Orter</h2>
+          <p class="muted" style="margin-top:0">Har ni flera kontor? Lägg in orterna och koppla varje ställe till en ort.
+            Startsidan får då en ortväljare. Ställen utan ort syns överallt. Inga orter = ingen ortväljare.</p>
+          <form id="addLoc" class="row">
+            <div><label for="lName">Ny ort</label><input id="lName" type="text" required maxlength="40" placeholder="T.ex. Göteborg" /></div>
+            <button type="submit">Lägg till</button>
+          </form>
+          ${data.locations.length ? `<table><tbody>${data.locations.map((l) => `
+            <tr><td>📍 ${esc(l.name)}</td>
+              <td class="muted">${data.places.filter((p) => p.location_id === l.id).length} ställen</td>
+              <td class="r" style="white-space:nowrap"><button class="secondary small" data-loc-rename="${l.id}">Byt namn</button>
+                <button class="danger small" data-loc-del="${l.id}">Ta bort</button></td></tr>`).join('')}</tbody></table>` : ''}
+        </div>`;
+      document.getElementById('addLoc').onsubmit = act(async (e) => {
+        e.preventDefault();
+        await api('/api/admin/locations', 'POST', { name: document.getElementById('lName').value });
+        hooks = null; await reload(); renderHooks();
+      });
     }
 
     // ---------- Rounds ----------
     function renderRounds() {
       const rows = data.rounds.map((r) => `
         <tr>
-          <td><a href="/r/${esc(r.slug)}" style="font-weight:700">${esc(r.title)}</a>${r.name ? `<div class="muted" style="font-size:.8rem">${esc(r.placeName)}</div>` : ''}</td>
+          <td><a href="/r/${esc(r.slug)}" style="font-weight:700">${esc(r.title)}</a><div class="muted" style="font-size:.8rem">${[r.name ? esc(r.placeName) : '', r.locationName ? '📍 ' + esc(r.locationName) : ''].filter(Boolean).join(' · ')}</div></td>
           <td>${esc(r.creatorName)}<div class="muted" style="font-size:.8rem">${esc(r.creatorEmail)}</div></td>
           <td><span class="badge ${r.isOpen ? 'open' : 'closed'}">${r.isOpen ? 'Öppen' : 'Stängd'}</span>
             ${r.isOpen && r.closeAt ? `<div class="muted" style="font-size:.8rem">stänger ${esc(whenShort(r.closeAt))}</div>` : ''}</td>
@@ -80,7 +105,7 @@
     // ---------- Places & menus ----------
     function renderPlaces() {
       if (selectedPlace === null || !data.places.some((p) => p.id === selectedPlace)) selectedPlace = data.places[0]?.id ?? null;
-      const placeOpts = data.places.map((p) => `<option value="${p.id}" ${p.id === selectedPlace ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+      const placeOpts = data.places.map((p) => `<option value="${p.id}" ${p.id === selectedPlace ? 'selected' : ''}>${esc(p.name)}${p.location_id ? ` – ${esc(locName(p.location_id))}` : ''}</option>`).join('');
       const menu = data.menuItems.filter((m) => m.place_id === selectedPlace);
       const opts = data.options.filter((o) => o.place_id === selectedPlace);
 
@@ -94,6 +119,10 @@
           ${!data.places.length ? '' : `
           <div class="row" style="margin-top:18px">
             <div><label for="editPlace">Redigera ställe</label><select id="editPlace">${placeOpts}</select></div>
+            ${data.locations.length ? `<div style="max-width:220px"><label for="placeLoc">Ort</label><select id="placeLoc">
+              <option value="">Alla orter</option>
+              ${data.locations.map((l) => `<option value="${l.id}" ${data.places.find((p) => p.id === selectedPlace)?.location_id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
+            </select></div>` : ''}
             <button class="secondary" id="renamePlace">Byt namn</button>
             <button class="danger" id="delPlace">Ta bort</button>
           </div>
@@ -138,6 +167,10 @@
       });
       if (!data.places.length) return;
       $('editPlace').onchange = () => { selectedPlace = Number($('editPlace').value); renderPlaces(); };
+      if ($('placeLoc')) $('placeLoc').onchange = act(async () => {
+        await api(`/api/admin/places/${selectedPlace}`, 'PATCH', { locationId: $('placeLoc').value ? Number($('placeLoc').value) : null });
+        await reload();
+      });
       $('renamePlace').onclick = act(async () => {
         const cur = data.places.find((p) => p.id === selectedPlace);
         const name = prompt('Nytt namn', cur.name);
@@ -183,6 +216,13 @@
           </div>
           <div class="row" style="margin-top:8px;align-items:center">
             ${hooks.events.map((ev) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-ev" value="${ev}" ${!h.events || h.events.includes(ev) ? 'checked' : ''} /><span>${EVENT_NAMES[ev] || ev}</span></label>`).join('')}
+          </div>
+          ${hooks.locations.length ? `<div class="row" style="margin-top:6px;align-items:center">
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.85rem">Bara orter:</span>
+            ${hooks.locations.map((l) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-loc" value="${l.id}" ${(h.locations || []).includes(l.id) ? 'checked' : ''} /><span>${esc(l.name)}</span></label>`).join('')}
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(ingen vald = alla)</span>
+          </div>` : ''}
+          <div class="row" style="margin-top:8px;align-items:center">
             <span style="flex:1"></span>
             <button type="button" class="secondary small" data-hook-test="${i}" style="flex:0 0 auto">Testa</button>
             <button type="button" class="danger small" data-hook-del="${i}" style="flex:0 0 auto">Ta bort</button>
@@ -203,7 +243,8 @@
       const collect = () => [...document.querySelectorAll('.hook')].map((d) => ({
         url: d.querySelector('.h-url').value.trim(),
         format: d.querySelector('.h-format').value,
-        events: [...d.querySelectorAll('.h-ev:checked')].map((c) => c.value)
+        events: [...d.querySelectorAll('.h-ev:checked')].map((c) => c.value),
+        locations: [...d.querySelectorAll('.h-loc:checked')].map((c) => Number(c.value))
       }));
       document.getElementById('hookAdd').onclick = () => { hooks.hooks = [...collect(), { url: '', format: 'teams', events: hooks.events }]; renderHooks(); };
       document.getElementById('hookSave').onclick = act(async () => {
@@ -239,6 +280,21 @@
     el.addEventListener('click', act(async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.dataset.locRename) {
+        const l = data.locations.find((x) => x.id === Number(t.dataset.locRename));
+        const name = prompt('Nytt namn', l.name);
+        if (!name || name === l.name) return;
+        await api(`/api/admin/locations/${l.id}`, 'PATCH', { name });
+        hooks = null; await reload(); renderHooks();
+        return;
+      }
+      if (t.dataset.locDel) {
+        const l = data.locations.find((x) => x.id === Number(t.dataset.locDel));
+        if (!confirm(`Ta bort orten "${l.name}"?\n\nStällena ligger kvar och syns då på alla orter. Webhooks som bara gällde ${l.name} skickar därefter för alla orter.`)) return;
+        await api(`/api/admin/locations/${l.id}`, 'DELETE');
+        hooks = null; await reload(); renderHooks();
+        return;
+      }
       if (t.dataset.endRound) {
         if (!confirm(`Avsluta "${t.dataset.title}"? ${t.dataset.count} beställningar raderas permanent.`)) return;
         await api(`/api/admin/rounds/${t.dataset.endRound}/end`, 'POST', {});

@@ -57,6 +57,7 @@
       return `
         <div class="info" id="info">
           ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
+          ${r.locationName ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
           <span>av ${esc(r.creatorName)}</span>
           ${r.isToday ? '' : `<span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>`}
           ${r.isOpen && r.closeAt ? `<span>Beställ senast <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : ''}

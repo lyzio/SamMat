@@ -25,6 +25,9 @@
     async function init() {
       const [places, rounds] = await Promise.all([api('/api/places'), api('/api/rounds')]);
       mailConfigured = rounds.mailConfigured;
+      const locs = rounds.locations || [];
+      let loc = store.get('sammat_location');
+      if (loc && !locs.some((l) => String(l.id) === loc)) loc = '';
       if (!places.length) {
         appEl.innerHTML = '<h1>Inga ställen än</h1><p class="muted">En admin behöver lägga in ställen och menyer först.</p>';
         return;
@@ -33,11 +36,13 @@
         <h1>Starta en sambeställning</h1>
         <p class="muted">Du får en länk att dela och en PIN-kod för att hantera rundan.</p>
         <form id="f">
+          ${locs.length ? `<label for="loc">Ort</label>
+          <select id="loc">
+            <option value="">Alla orter</option>
+            ${locs.map((l) => `<option value="${l.id}" ${String(l.id) === loc ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
+          </select>` : ''}
           <label for="place">Ställe</label>
-          <select id="place" required>
-            <option value="">– Välj –</option>
-            ${places.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}
-          </select>
+          <select id="place" required></select>
 
           <label for="name">Namn på rundan <span class="muted">(valfritt)</span></label>
           <input id="name" type="text" maxlength="50" placeholder="T.ex. Fredagspizza plan 3" />
@@ -103,6 +108,14 @@
         </form>`;
 
       const $ = (id) => document.getElementById(id);
+      function fillPlaces() {
+        const l = $('loc') ? $('loc').value : '';
+        const list = places.filter((p) => !l || !p.locationId || String(p.locationId) === l);
+        $('place').innerHTML = `<option value="">– Välj –</option>` + list.map((p) =>
+          `<option value="${p.id}">${esc(p.name)}${!l && p.locationName ? ` (${esc(p.locationName)})` : ''}</option>`).join('');
+      }
+      fillPlaces();
+      if ($('loc')) $('loc').onchange = () => { store.set('sammat_location', $('loc').value); fillPlaces(); };
       const nowLocal = () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
       $('date').value = ymdLocal();
       $('date').min = ymdLocal();
