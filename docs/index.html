@@ -200,7 +200,7 @@ networks:
       <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>SamMat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
       <tr><td><code>PURGE_DAYS</code></td><td>Rundor raderas så här många dagar efter sitt datum (standard 7).</td></tr>
       <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
-      <tr><td><code>CREATE_PIN</code></td><td>Kräv en PIN för att starta en runda (tomt = vem som helst).</td></tr>
+      <tr><td><code>CREATE_PIN</code></td><td>Kräv en PIN för att starta en runda (tomt = vem som helst). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra.</td></tr>
       <tr><td><code>BACKUP_DAYS</code></td><td>Daglig backup i <code>data/backups/</code>, sparas så många dagar (standard 7, 0 = av).</td></tr>
       <tr><td><code>ORDER_LIMIT</code></td><td>Max nya beställningar per IP och 10 minuter (standard 20).</td></tr>
       <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>

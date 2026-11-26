@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.6.3 – 2026-11-26
+- With `CREATE_PIN` set, `/ny` starts with a page holding only the PIN (one box per digit, paste works, submits when full). The form shows only after a correct PIN, and a remembered PIN skips the step. New endpoint `POST /api/create-pin`, with the same lockout as other PINs.
+
 ## 2.6.2 – 2026-11-26
 - Footer on every page with a link to the docs site and to GitHub issues for bug reports.
 - Docs: how to reach an unexposed Apprise/ntfy container over a shared network.

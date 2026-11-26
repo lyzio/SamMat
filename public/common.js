@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 class ApiError extends Error {
-  constructor(message, status) { super(message); this.status = status; }
+  constructor(message, status, data) { super(message); this.status = status; this.data = data || {}; }
 }
 
 async function api(url, method = 'GET', body) {
@@ -67,7 +67,7 @@ async function api(url, method = 'GET', body) {
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(out.error || L('Något gick fel.', 'Something went wrong.'), res.status);
+  if (!res.ok) throw new ApiError(out.error || L('Något gick fel.', 'Something went wrong.'), res.status, out);
   return out;
 }
 

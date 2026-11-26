@@ -64,7 +64,7 @@ Peka din reverse proxy på `127.0.0.1:8102`. Gå sedan till `/admin`, logga in m
 | `MAIL_FROM` | Avsändare, t.ex. `SamMat <sammat@example.com>`. Måste vara verifierad hos mejltjänsten. |
 | `PURGE_DAYS` | Rundor raderas så många dagar efter sitt datum (standard 7). |
 | `MAX_ACTIVE_ROUNDS` | Max antal rundor samtidigt (standard 30). |
-| `CREATE_PIN` | Kräv en PIN för att starta en runda (tomt = vem som helst kan). |
+| `CREATE_PIN` | Kräv en PIN för att starta en runda (tomt = vem som helst kan). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra. |
 | `BACKUP_DAYS` | Daglig backup i `data/backups/`, sparas så många dagar (standard 7, 0 = av). |
 | `ORDER_LIMIT` | Max antal nya beställningar per IP och 10 minuter (standard 20). |
 | `FAVORITE_DAYS` | Hur länge "samma som förra gången" sparas efter senaste beställningen (standard 180). |

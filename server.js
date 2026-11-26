@@ -824,7 +824,15 @@ app.post('/api/forget', (req, res) => {
   res.json({ ok: true, removed: info.changes });
 });
 
-app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN) }));
+app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN),
+  createPinDigits: /^\d{4,8}$/.test(CREATE_PIN) ? CREATE_PIN.length : 0 }));
+
+// Check the start-a-round PIN before the form is filled in (same lockout as other PINs)
+app.post('/api/create-pin', (req, res) => {
+  if (!CREATE_PIN) return res.json({ ok: true });
+  if (!pinOk(req, res, CREATE_PIN)) return;
+  res.json({ ok: true });
+});
 
 // Payment page data (link from the payment mail)
 app.get('/api/pay/:token', async (req, res) => {

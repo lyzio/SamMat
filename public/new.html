@@ -21,6 +21,69 @@
   <script>
     const appEl = document.getElementById('app');
     let mailConfigured = false;
+    let createPinValue = '';
+
+    // Step 1 when CREATE_PIN is set: a page with only the PIN, before the form.
+    async function pinGate(info) {
+      const $ = (id) => document.getElementById(id);
+      const saved = store.get('sammat_create_pin');
+      if (saved) {
+        try { await api('/api/create-pin', 'POST', { pin: saved }); createPinValue = saved; return true; }
+        catch { store.set('sammat_create_pin', ''); }
+      }
+      const n = info.createPinDigits;
+      appEl.innerHTML = `
+        <div class="pin-gate">
+          <h1>${L('Starta en sambeställning', 'Start a group order')}</h1>
+          <p class="muted">${L('Ange PIN-koden för att starta en runda. Fråga den som driver SamMat om du inte har den.', 'Enter the PIN to start a round. Ask whoever runs SamMat if you don’t have it.')}</p>
+          <form id="pg" autocomplete="off">
+            ${n ? `<div class="pin-boxes">${Array.from({ length: n }, (_, i) => `<input class="pin-box" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="${L('Siffra', 'Digit')} ${i + 1}" />`).join('')}</div>`
+              : `<input id="pgText" type="password" autocomplete="off" maxlength="20" required />`}
+            <div id="pgErr"></div>
+            <button id="pgGo" type="submit">${L('Fortsätt', 'Continue')}</button>
+          </form>
+        </div>`;
+      const boxes = [...appEl.querySelectorAll('.pin-box')];
+      const value = () => (n ? boxes.map((b) => b.value).join('') : $('pgText').value.trim());
+      return new Promise((resolve) => {
+        const submit = async () => {
+          const pin = value();
+          if (!pin || (n && pin.length < n)) return;
+          $('pgGo').disabled = true; $('pgErr').innerHTML = '';
+          try {
+            await api('/api/create-pin', 'POST', { pin });
+            createPinValue = pin; store.set('sammat_create_pin', pin); resolve(true);
+          } catch (ex) {
+            $('pgErr').innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+            $('pgGo').disabled = false;
+            const f = $('pg'); f.classList.remove('shake'); void f.offsetWidth; f.classList.add('shake');
+            if (n) { boxes.forEach((b) => { b.value = ''; }); boxes[0].focus(); } else $('pgText').select();
+          }
+        };
+        $('pg').onsubmit = (e) => { e.preventDefault(); submit(); };
+        boxes.forEach((b, i) => {
+          b.addEventListener('input', () => {
+            b.value = b.value.replace(/\D/g, '').slice(-1);
+            if (b.value && i < n - 1) boxes[i + 1].focus();
+            if (value().length === n) submit();
+          });
+          b.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && !b.value && i > 0) { boxes[i - 1].value = ''; boxes[i - 1].focus(); e.preventDefault(); }
+            if (e.key === 'ArrowLeft' && i > 0) boxes[i - 1].focus();
+            if (e.key === 'ArrowRight' && i < n - 1) boxes[i + 1].focus();
+          });
+          b.addEventListener('paste', (e) => {
+            const d = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, n);
+            if (!d) return; e.preventDefault();
+            boxes.forEach((x, j) => { x.value = d[j] || ''; });
+            (boxes[d.length] || boxes[n - 1]).focus();
+            if (d.length === n) submit();
+          });
+          b.addEventListener('focus', () => b.select());
+        });
+        (boxes[0] || $('pgText')).focus();
+      });
+    }
 
     async function init() {
       const [places, rounds, info] = await Promise.all([api('/api/places'), api('/api/rounds'), api('/api/info')]);
@@ -35,15 +98,13 @@
         appEl.innerHTML = `<h1>${L('Inga ställen än', 'No places yet')}</h1><p class="muted">${L('En admin behöver lägga in ställen och menyer först.', 'An admin needs to add places and menus first.')}</p>`;
         return;
       }
+      if (info.createPin && !(await pinGate(info))) return;
       const opt = (v, sv, en) => `<option value="${v}">${L(sv, en)}</option>`;
       const optional = `<span class="muted">(${L('valfritt', 'optional')})</span>`;
       appEl.innerHTML = `
         <h1>${L('Starta en sambeställning', 'Start a group order')}</h1>
         <p class="muted">${L('Du får en länk att dela och en PIN-kod för att hantera rundan.', 'You get a link to share and a PIN code to manage the round.')}</p>
         <form id="f">
-          ${info.createPin ? `<label for="createPin">${L('PIN för att starta en runda', 'PIN for starting a round')}</label>
-          <input id="createPin" type="password" inputmode="numeric" autocomplete="off" required maxlength="20" value="${esc(store.get('sammat_create_pin'))}" />
-          <p class="muted" style="margin:4px 0 0;font-size:.82rem">${L('Den här installationen kräver en PIN. Fråga den som driver SamMat.', 'This installation requires a PIN. Ask whoever runs SamMat.')}</p>` : ''}
           ${locs.length ? `<label for="loc">${L('Ort', 'Location')}</label>
           <select id="loc">
             <option value="">${L('Alla orter', 'All locations')}</option>
@@ -172,7 +233,7 @@
         $('err').innerHTML = '';
         $('go').disabled = true;
         const body = {
-          createPin: $('createPin') ? $('createPin').value : undefined,
+          createPin: createPinValue || undefined,
           placeId: Number($('place').value),
           name: $('name').value.trim(),
           creatorName: $('creator').value.trim(),
@@ -194,11 +255,11 @@
           const r = await api('/api/rounds', 'POST', body);
           store.set('sammat_name', body.creatorName);
           if ($('comp')) store.set('sammat_company', $('comp').value);
-          if ($('createPin')) store.set('sammat_create_pin', body.createPin);
           store.set('sammat_swish', body.swishNumber);
           if (body.creatorEmail) store.set('sammat_email', body.creatorEmail);
           done(r, body.creatorEmail);
         } catch (ex) {
+          if (ex.data && ex.data.needPin) { store.set('sammat_create_pin', ''); createPinValue = ''; return init(); } // PIN changed meanwhile
           $('err').innerHTML = `<div class="error">${esc(ex.message)}</div>`;
           $('go').disabled = false;
         }
