@@ -88,6 +88,32 @@ Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *W
 
 Händelser: `round.created`, `round.closed` och `food.arrived`.
 
+### Apprise eller ntfy i en egen container
+
+Kör du Apprise (eller ntfy) som en container som inte är exponerad utåt, kan SamMat ändå nå den. Lägg båda containrarna på ett gemensamt nätverk och använd containerns namn och interna port i webhook-adressen. Ingen port behöver publiceras.
+
+```sh
+podman network create notify        # en gång (eller: docker network create notify)
+```
+
+Lägg till nätverket i **båda** compose-filerna, alltså både SamMats och Apprises:
+
+```yaml
+services:
+  sammat:                            # resp. apprise:
+    networks: [default, notify]
+
+networks:
+  notify:
+    external: true
+```
+
+Kör sedan `up -d` på båda. Webhook-adressen i `/admin` blir `http://apprise:8000/notify/<nyckel>`, där `apprise` är containerns namn (`container_name`) och `8000` är porten inne i containern, inte en publicerad port. För ntfy blir det t.ex. `http://ntfy:80/lunch`.
+
+- Med rootless Podman måste båda containrarna köras av samma användare för att hamna på samma nätverk.
+- `podman network connect notify apprise` fungerar också, men kopplingen försvinner när containern skapas om. Därför är det bättre att skriva in nätverket i compose-filen.
+- Testa med knappen "Testa" vid webhooken. Får du `fetch failed` så hittar SamMat inte containern. Kontrollera då namn och nätverk med `podman network inspect notify`.
+
 ## Utveckla
 
 ```bash

@@ -178,6 +178,19 @@ podman logs sammat</code></pre>
 <pre><code>podman-compose -f sammat-compose.yaml pull
 podman-compose -f sammat-compose.yaml up -d</code></pre>
 
+    <h3 style="margin-top:28px">Apprise eller ntfy i en egen container</h3>
+    <p>Kör du Apprise eller ntfy som en container som inte är exponerad, lägg den och SamMat på ett gemensamt nätverk och använd containerns namn i webhook-adressen. Ingen port behöver publiceras.</p>
+<pre><code>podman network create notify        # en gång
+
+# i båda compose-filerna (sammat och apprise):
+services:
+  sammat:
+    networks: [default, notify]
+networks:
+  notify:
+    external: true</code></pre>
+    <p>Webhook-adressen i <code>/admin</code> blir då t.ex. <code>http://apprise:8000/notify/&lt;nyckel&gt;</code>, med containerns namn och dess <em>interna</em> port. Med rootless Podman måste båda köras av samma användare. Tryck på "Testa" – <code>fetch failed</code> betyder att SamMat inte hittar containern.</p>
+
     <h3 style="margin-top:28px">Inställningar (<code>sammat.env</code>)</h3>
     <table>
       <tr><th>Variabel</th><th>Betydelse</th></tr>

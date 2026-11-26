@@ -11,3 +11,10 @@ services:
       - "127.0.0.1:8102:3000"
     volumes:
       - /opt/container-data/sammat/data:/app/data
+    # Apprise/ntfy in its own container, not exposed? Put both on a shared network
+    # (podman network create notify) and use http://<container-name>:<port>/… as the webhook URL.
+    # networks: [default, notify]
+
+# networks:
+#   notify:
+#     external: true
