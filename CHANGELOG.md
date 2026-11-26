@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.1 – 2026-11-26
+- Webhook formats `ntfy` (topic URL) and `apprise` (Apprise API `/notify/<key>`). Credentials in the URL (`user:pass@` → Basic, `:token@` → Bearer) are sent as an Authorization header.
+- Logo label "ADMIN" in the logo font, behind the logo. The drinks hint text is removed.
+
 ## 2.6.0 – 2026-11-26
 - Drinks as their own category with quantity (+/−). They are summed at the bottom of the order list ("Dricka (hämtas själv)"), since everyone picks them up themselves.
 - Add-ons and removals can be limited to certain dishes; the order form only shows what fits the chosen dish.

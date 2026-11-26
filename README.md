@@ -22,7 +22,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Gemensam kostnad**, t.ex. utkörning, delas automatiskt lika på alla. Betalningar räknas i kronor, så ändras något i efterhand mejlas bara mellanskillnaden.
 - **Automatisk betalpåminnelse** (valfri) till de som inte swishat, 2–48 timmar efter betalningsmejlet.
 - **Samma som förra gången**: kryssar man i "kom ihåg" föreslås samma beställning nästa gång hos samma ställe. Det kräver både e-post och namn, och e-posten sparas bara som en HMAC-nyckel. `/integritet` förklarar vad som sparas och har "Glöm mig".
-- **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
+- **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord, ntfy, Apprise eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
 - **Mejl** via valfri SMTP-server: *Maten är här*, betalningsmejl, påminnelser och orderlista.
 - **Flera orter/kontor**: koppla varje ställe till en ort. Startsidan får en ortväljare, och webhooks kan skickas per ort. Utan inlagda orter syns inget av det.
 - **Flera företag i samma hus** (t.ex. ett kontorshotell): en runda kan gälla ett företag eller *Alla i huset*. Startsidan får en företagsväljare, och webhooks kan skickas per företag. Det är ett filter, ingen spärr.
@@ -79,7 +79,7 @@ En rad per `NYCKEL=värde`, utan citattecken. Värdena läses när containern sk
 - `GET /api/rounds/<kod>`: en runda med meny och "lappar" (namn + rätt).
 - `GET /healthz`: `ok`.
 
-Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *Workflows → Post to a channel when a webhook request is received*), `slack` (`{text}`), `discord` (`{content}`) eller `json`:
+Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *Workflows → Post to a channel when a webhook request is received*), `slack` (`{text}`), `discord` (`{content}`), `ntfy` (ämnets adress, t.ex. `https://ntfy.sh/lunch`), `apprise` (Apprise API, t.ex. `http://apprise:8000/notify/<nyckel>`) eller `json`. Inloggning kan skrivas i adressen: `https://user:pass@…` blir Basic, `https://:token@…` blir Bearer. Formatet `json` ser ut så här:
 
 ```json
 { "event": "round.created", "text": "🍕 Maja startar en sambeställning: …", "link": "https://…/r/abc123",

@@ -1263,7 +1263,7 @@ async function onClosed(r) {
   }
 }
 
-// ---------- Webhooks: Teams (Workflows), Slack, Discord or plain JSON ----------
+// ---------- Webhooks: Teams (Workflows), Slack, Discord, ntfy, Apprise or plain JSON ----------
 // Webhook texts, per hook language (L = 'sv' | 'en')
 const EVENT_TEXT = {
   'round.created': (r, x, L = 'sv') => `🍕 ${r.creator_name} ${M(L, 'startar en sambeställning', 'is starting a group order')}: ${roundTitle(r)}` +
@@ -1282,6 +1282,8 @@ function hookPayload(format, event, r, text, lang = 'sv') {
   const link = `${PUBLIC_URL}/r/${r.slug}`;
   if (format === 'slack') return { text: `${text}\n${link}` };
   if (format === 'discord') return { content: `${text}\n${link}` };
+  // Apprise API (stateful /notify/<key> or stateless /notify with urls in its config)
+  if (format === 'apprise') return { title: `SamMat – ${roundTitle(r)}`, body: `${text}\n${link}`, type: 'info', format: 'text' };
   if (format === 'teams') {
     return {
       type: 'message',
@@ -1302,12 +1304,32 @@ function hookPayload(format, event, r, text, lang = 'sv') {
   };
 }
 
+// Credentials may be written in the URL (https://user:pass@host/… or https://:token@host/…);
+// fetch() refuses such URLs, so move them to an Authorization header.
+function hookTarget(raw) {
+  const u = new URL(raw); const headers = { 'Content-Type': 'application/json' };
+  if (u.username || u.password) {
+    const user = decodeURIComponent(u.username), pass = decodeURIComponent(u.password);
+    headers.Authorization = user ? `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}` : `Bearer ${pass}`;
+    u.username = ''; u.password = '';
+  }
+  return { u, headers };
+}
+
 async function postHook(h, event, r, extra) {
   const text = EVENT_TEXT[event](r, extra, h.lang === 'en' ? 'en' : 'sv');
-  const res = await fetch(h.url, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(hookPayload(h.format, event, r, text, h.lang)), signal: AbortSignal.timeout(8000)
-  });
+  let { u, headers } = hookTarget(h.url); let payload;
+  if (h.format === 'ntfy') {
+    // ntfy JSON publishing: POST to the server root with the topic in the body (handles å/ä/ö and emoji)
+    const parts = u.pathname.split('/').filter(Boolean);
+    const topic = parts.pop();
+    if (!topic) throw new Error('ntfy: URL must end with the topic, e.g. https://ntfy.sh/lunch');
+    payload = { topic, title: `SamMat – ${roundTitle(r)}`, message: text, click: `${PUBLIC_URL}/r/${r.slug}`, tags: ['fork_and_knife'] };
+    u = new URL(`${u.origin}/${parts.join('/')}`);
+  } else {
+    payload = hookPayload(h.format, event, r, text, h.lang);
+  }
+  const res = await fetch(u, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
@@ -1556,7 +1578,7 @@ app.post('/api/admin/rounds/:id/end', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-const HOOK_FORMATS = ['teams', 'slack', 'discord', 'json'];
+const HOOK_FORMATS = ['teams', 'slack', 'discord', 'ntfy', 'apprise', 'json'];
 const HOOK_EVENTS = Object.keys(EVENT_TEXT);
 app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS, locations: listLocations(), companies: listCompanies() }));
 app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
