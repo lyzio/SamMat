@@ -1,8 +1,11 @@
 /* Sammat – theme */
-@font-face { font-family: 'Roboto'; font-weight: 400; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-400-normal.woff2') format('woff2'); }
-@font-face { font-family: 'Roboto'; font-weight: 500; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-500-normal.woff2') format('woff2'); }
-@font-face { font-family: 'Roboto'; font-weight: 700; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-700-normal.woff2') format('woff2'); }
-@font-face { font-family: 'Roboto Slab'; font-weight: 700; font-display: swap; src: url('/fonts/roboto-slab/files/roboto-slab-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Bangers'; font-weight: 400; font-display: swap; src: url('/fonts/bangers/files/bangers-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Bitter'; font-weight: 600; font-display: swap; src: url('/fonts/bitter/files/bitter-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Bitter'; font-weight: 700; font-display: swap; src: url('/fonts/bitter/files/bitter-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito Sans'; font-weight: 400; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito Sans'; font-weight: 400; font-style: italic; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-400-italic.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito Sans'; font-weight: 600; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Nunito Sans'; font-weight: 700; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-700-normal.woff2') format('woff2'); }
 
 :root {
   --bg: #1e272e;
@@ -18,7 +21,10 @@
   --green: #05c46b;
   --radius: 12px;
   color-scheme: dark;
-  font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --sans: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --slab: 'Bitter', Rockwell, 'Roboto Slab', Georgia, serif;
+  --logo: 'Bangers', Impact, 'Arial Black', sans-serif;
+  font-family: var(--sans);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
@@ -31,8 +37,8 @@ a { color: var(--coral); }
 .topbar a { text-decoration: none; font-size: .9rem; color: var(--muted); }
 .topbar a:hover { color: var(--red); }
 .logo {
-  font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; font-size: 1.5rem; color: var(--red);
-  display: inline-block; transform: rotate(-2deg); letter-spacing: .01em;
+  font-family: var(--logo); font-weight: 400; font-size: 2.1rem; line-height: 1; letter-spacing: .03em; color: var(--red);
+  display: inline-block; transform: rotate(-3deg); text-shadow: 3px 3px 0 var(--purple);
 }
 .logo span { color: var(--text); font-size: 1rem; margin-left: 4px; }
 
@@ -41,7 +47,7 @@ a { color: var(--coral); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
 
-h1, h2 { font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; }
+h1, h2 { font-family: var(--slab); font-weight: 700; }
 h1 { margin: 0 0 8px; font-size: 1.6rem; color: var(--red); }
 h2 { margin: 0 0 12px; font-size: 1.15rem; color: var(--text); }
 .muted { color: var(--muted); font-size: .92rem; }
@@ -49,7 +55,7 @@ h2 { margin: 0 0 12px; font-size: 1.15rem; color: var(--text); }
 .center { text-align: center; }
 summary { cursor: pointer; }
 
-label { display: block; font-weight: 500; margin: 16px 0 6px; font-size: .93rem; }
+label { display: block; font-weight: 600; margin: 16px 0 6px; font-size: .93rem; }
 input[type="text"], input[type="email"], input[type="time"], input[type="number"], input[type="password"], input[type="tel"], select, textarea {
   width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 1rem;
   background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s;
@@ -90,7 +96,7 @@ button.full { width: 100%; margin-top: 14px; padding: 12px; }
 .qr svg { width: 210px; height: 210px; background: #fff; padding: 8px; border: 4px solid var(--yellow);
   border-radius: 6px; box-shadow: 8px 8px 0 var(--purple); transform: rotate(1deg); }
 .box { background: var(--bg); border-left: 4px solid var(--yellow); border-radius: 10px; padding: 14px; margin-top: 14px; line-height: 1.55; }
-.amount { font-family: 'Roboto Slab', Georgia, serif; font-size: 1.7rem; font-weight: 700; margin-top: 6px; color: var(--yellow); }
+.amount { font-family: var(--slab); font-size: 1.7rem; font-weight: 700; margin-top: 6px; color: var(--yellow); }
 .error { color: #fff; background: rgba(255, 82, 82, .18); border: 1px solid var(--coral); padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
 
 .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
@@ -101,7 +107,7 @@ button.full { width: 100%; margin-top: 14px; padding: 12px; }
 
 table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: .92rem; }
 th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-th { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+th { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
 tbody tr:hover { background: rgba(255, 255, 255, .025); }
 td.r, th.r { text-align: right; }
 tr.paid td { color: #6c7a86; }
@@ -110,7 +116,7 @@ tr.paid td.nr { color: var(--green); }
 .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .badge.open { background: var(--green); color: #fff; }
 .badge.closed { background: var(--coral); color: #fff; }
-.nr { font-family: 'Roboto Slab', Georgia, serif; font-weight: 700; font-size: 1.05rem; color: var(--red); }
+.nr { font-family: var(--slab); font-weight: 700; font-size: 1.05rem; color: var(--red); }
 
 .orderlist { margin-top: 12px; font-size: 1.05rem; line-height: 2; }
 .orderlist > div { border-bottom: 1px dashed var(--line); }
@@ -130,8 +136,8 @@ tr.paid td.nr { color: var(--green); }
 
 /* ---------- v2: rounds, PIN, note wall ---------- */
 .pin-card { max-width: 380px; margin: 40px auto; }
-.pin-input { font-size: 1.6rem !important; letter-spacing: .5em; text-align: center; font-family: 'Roboto Slab', Georgia, serif; }
-.pin-big { font-family: 'Roboto Slab', Georgia, serif; font-size: 2.4rem; font-weight: 700; letter-spacing: .25em; color: var(--yellow); }
+.pin-input { font-size: 1.6rem !important; letter-spacing: .5em; text-align: center; font-family: var(--slab); }
+.pin-big { font-family: var(--slab); font-size: 2.4rem; font-weight: 700; letter-spacing: .25em; color: var(--yellow); }
 .linkbox { display: flex; gap: 8px; align-items: center; background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 8px 8px 12px; }
 .linkbox code { flex: 1; overflow-wrap: anywhere; font-size: .95rem; color: var(--text); }
 .info { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 2px; font-size: .92rem; }
@@ -162,7 +168,7 @@ tr.paid td.nr { color: var(--green); }
   transform: rotate(var(--rot, 0deg)); transition: transform .2s;
 }
 .note:hover { transform: rotate(0deg) scale(1.06); z-index: 3; }
-.note b { display: block; font-family: 'Roboto Slab', Georgia, serif; font-size: 1.05rem; margin-bottom: 3px; overflow-wrap: anywhere; }
+.note b { display: block; font-family: var(--slab); font-size: 1.05rem; margin-bottom: 3px; overflow-wrap: anywhere; }
 .note span { overflow-wrap: anywhere; }
 .note::before { content: ''; display: block; width: 34px; height: 12px; margin: -18px auto 8px; background: rgba(255,255,255,.45); transform: rotate(-3deg); }
 .note.c0 { background: #ffd32a; }
@@ -186,15 +192,15 @@ tr.paid td.nr { color: var(--green); }
   .wall-title, .wall-bottom { display: none; }
   .wrap.wide { max-width: 1100px; }
 }
-.topbar a.logo { color: var(--red); font-size: 1.5rem; text-decoration: none; }
+.topbar a.logo { color: var(--red); font-size: 2.1rem; text-decoration: none; }
 .topbar a.logo:hover { color: var(--coral); }
-.pin-inline { font-family: 'Roboto Slab', Georgia, serif; color: var(--yellow); letter-spacing: .15em; font-size: 1.1rem; }
+.pin-inline { font-family: var(--slab); color: var(--yellow); letter-spacing: .15em; font-size: 1.1rem; }
 details > summary h2 { display: inline; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 td code { color: var(--yellow); letter-spacing: .1em; }
 input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(.8); }
 .row > .badge { flex: 0 0 auto; min-width: 0; }
-.date-tag { font-family: 'Roboto', sans-serif; font-size: .8rem; font-weight: 700; color: var(--bg); background: var(--yellow);
+.date-tag { font-family: var(--sans); font-size: .8rem; font-weight: 700; color: var(--bg); background: var(--yellow);
   padding: 2px 8px; border-radius: 999px; vertical-align: middle; margin-left: 6px; text-transform: none; }
 input[type="date"], input[type="datetime-local"] { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
   font: inherit; font-size: 1rem; background: var(--bg); color: var(--text); }
@@ -212,3 +218,11 @@ tr.cancelled td:last-child, tr.cancelled td:nth-last-child(2) { text-decoration:
 .prose p, .prose li { color: var(--text); }
 .prose ul { padding-left: 20px; }
 .hook { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px 12px; margin-top: 12px; }
+/* Install-as-app card */
+.install { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 12px 12px 12px 14px; margin-top: 18px; }
+.install img { border-radius: 10px; flex: 0 0 auto; }
+.install-text { flex: 1; display: flex; flex-direction: column; font-size: .9rem; line-height: 1.35; }
+.install-text span { color: var(--muted); }
+.install-x { background: transparent; color: var(--muted); padding: 4px 8px; font-size: .9rem; }
+.install-x:hover { color: var(--text); }

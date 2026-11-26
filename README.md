@@ -1,4 +1,4 @@
-# Sammat
+# SamMat
 
 **Sambeställning av mat med Swish.** En liten självhostad webbapp för att samla ihop matbeställningar på jobbet, i föreningen eller på LAN:et.
 Folk beställer själva utan konto, du får en färdig orderlista till restaurangen, och alla swishar rätt belopp.
@@ -21,6 +21,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Samma som förra gången**: kryssar man i "kom ihåg" föreslås samma beställning nästa gång hos samma ställe. Det kräver både e-post och namn, och e-posten sparas bara som en HMAC-nyckel. `/integritet` förklarar vad som sparas och har "Glöm mig".
 - **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
 - **Mejl** via valfri SMTP-server: *Maten är här*, betalningsmejl, påminnelser och orderlista.
+- **Installera som app** (PWA) från startsidan: en knapp i Chrome, Edge och Android, och en instruktion för Safari på iPhone, iPad och Mac.
 - **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor.
 - **Rensar efter sig**: när en runda avslutas raderas namn och e-post på riktigt. Gamla rundor rensas automatiskt.
 
@@ -53,7 +54,7 @@ Peka din reverse proxy på `127.0.0.1:8102`. Gå sedan till `/admin`, logga in m
 | `ADMIN_PIN` | PIN för `/admin`. Minst 4 tecken. |
 | `PUBLIC_URL` | Publik adress, används i länkar i mejl. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` | SMTP (valfritt). Port 465 = TLS, annars STARTTLS. Utan SMTP skickas inga mejl. |
-| `MAIL_FROM` | Avsändare, t.ex. `Sammat <sammat@example.com>`. Måste vara verifierad hos mejltjänsten. |
+| `MAIL_FROM` | Avsändare, t.ex. `SamMat <sammat@example.com>`. Måste vara verifierad hos mejltjänsten. |
 | `PURGE_DAYS` | Rundor raderas så många dagar efter sitt datum (standard 7). |
 | `MAX_ACTIVE_ROUNDS` | Max antal rundor samtidigt (standard 30). |
 | `FAVORITE_DAYS` | Hur länge "samma som förra gången" sparas efter senaste beställningen (standard 180). |
@@ -94,10 +95,10 @@ Allt ligger i `server.js` (Express + better-sqlite3 + nodemailer) och `public/` 
 - Högst 5 nya rundor per IP och timme.
 - Avslutade rundor raderas med `secure_delete` och WAL-checkpoint, så att namn och e-post inte ligger kvar i filen.
 - "Kom ihåg" är opt-in. E-posten sparas som HMAC med ett slumpat salt per installation, och uppslag kräver både e-post och namn.
-- Inga externa resurser: typsnitten (Roboto, Roboto Slab via `@fontsource`) serveras lokalt.
+- Inga externa resurser: typsnitten (Bangers, Bitter och Nunito Sans via `@fontsource`) serveras lokalt.
 
 ## Licens
 
 [GNU Affero General Public License v3.0](LICENSE) eller senare. Kör du en ändrad version som en tjänst ska ändringarna också finnas tillgängliga för användarna.
 
-Swish är ett varumärke som tillhör Getswish AB. Sammat har ingen koppling till Swish.
+Swish är ett varumärke som tillhör Getswish AB. SamMat har ingen koppling till Swish.

@@ -117,3 +117,55 @@ function reminderPreset(kind, eventYmd, closeIso) {
 }
 // ISO -> value for <input type=datetime-local> in local time
 const isoToLocal = (iso) => { if (!iso) return ''; const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+
+// ---------- Install as app (PWA) ----------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+let deferredInstall = null;
+const installListeners = [];
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // show our own button instead of the browser's mini-infobar
+  deferredInstall = e;
+  installListeners.forEach((fn) => fn());
+});
+window.addEventListener('appinstalled', () => { store.set('sammat_install_hidden', '1'); document.querySelectorAll('.install').forEach((x) => x.remove()); });
+
+function installHint() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const macSafari = !ios && /Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|Firefox/.test(ua);
+  if (ios) return 'Tryck på <strong>Dela</strong> <span aria-hidden="true">⎙</span> och välj <strong>Lägg till på hemskärmen</strong>.';
+  if (macSafari) return 'Välj <strong>Arkiv → Lägg till i Dock</strong> i menyn.';
+  return '';
+}
+
+// Renders an "install as app" card into el, if the browser supports it and it isn't installed or dismissed
+function renderInstall(el) {
+  if (!el) return;
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  if (standalone || store.get('sammat_install_hidden') === '1') { el.innerHTML = ''; return; }
+  const draw = () => {
+    const hint = deferredInstall ? '' : installHint();
+    if (!deferredInstall && !hint) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="install">
+        <img src="/img/icon-192.png" alt="" width="44" height="44" />
+        <div class="install-text"><strong>Spara SamMat som app</strong>
+          <span>${deferredInstall ? 'Hamnar bland dina appar – snabbt att hitta nästa gång.' : hint}</span></div>
+        ${deferredInstall ? '<button type="button" class="small" data-install>Installera</button>' : ''}
+        <button type="button" class="install-x" data-install-hide title="Visa inte igen" aria-label="Stäng">✕</button>
+      </div>`;
+    const b = el.querySelector('[data-install]');
+    if (b) b.onclick = async () => {
+      deferredInstall.prompt();
+      const { outcome } = await deferredInstall.userChoice;
+      deferredInstall = null;
+      if (outcome === 'accepted') store.set('sammat_install_hidden', '1');
+      draw();
+    };
+    el.querySelector('[data-install-hide]').onclick = () => { store.set('sammat_install_hidden', '1'); el.innerHTML = ''; };
+  };
+  installListeners.push(draw);
+  draw();
+}

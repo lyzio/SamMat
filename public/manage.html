@@ -3,14 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sammat – Hantera runda</title>
+  <title>SamMat – Hantera runda</title>
+  <link rel="icon" href="/favicon.png" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-title" content="SamMat" />
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
+  <meta name="theme-color" content="#1e272e" />
   <link rel="stylesheet" href="/style.css" />
   <script src="/common.js"></script>
 </head>
 <body>
   <div class="wrap">
     <div class="topbar no-print">
-      <div><a href="/" class="logo">Sammat</a> <span class="muted">hantera</span></div>
+      <div><a href="/" class="logo">SamMat</a> <span class="muted">hantera</span></div>
       <div class="row" style="flex:0 0 auto">
         <a href="#" id="orderLink">Beställningssidan</a>
         <button id="logout" class="secondary small" hidden>Logga ut</button>
@@ -72,7 +77,7 @@
     }
 
     function renderAll() {
-      document.title = `Sammat – ${data.round.title}`;
+      document.title = `SamMat – ${data.round.title}`;
       renderHead(); renderOrders(); renderMail(); renderSettings();
     }
 

@@ -1,4 +1,4 @@
-// Sammat – sambeställning av mat med Swish
+// SamMat – sambeställning av mat med Swish
 // Copyright (C) 2026 Oliver Sundström
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Source: https://github.com/lyzio/SamMat
@@ -43,6 +43,12 @@ const transporter = mailConfigured
     })
   : null;
 console.log(mailConfigured ? `Mejl: ${SMTP.host}:${SMTP.port} som ${SMTP.from}` : 'Mejl: ej konfigurerat (SMTP_* / MAIL_FROM saknas)');
+
+// Every mail gets the logo as an inline image (web fonts don't work reliably in mail clients)
+const LOGO = { filename: 'sammat.png', path: path.join(__dirname, 'public', 'img', 'logo-mail.png'), cid: 'sammatlogo', contentDisposition: 'inline' };
+function sendMail(opts) {
+  return transporter.sendMail({ from: SMTP.from, ...opts, attachments: [LOGO, ...(opts.attachments || [])] });
+}
 
 // ---------- Database ----------
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -487,7 +493,7 @@ app.post('/api/rounds', async (req, res) => {
   emit('round.created', r);
   if (creatorEmail && mailConfigured) {
     const m = createdMail(r);
-    transporter.sendMail({ from: SMTP.from, to: creatorEmail, ...m }).catch((e) => console.error('Startmejl:', e.message));
+    sendMail({ to: creatorEmail, ...m }).catch((e) => console.error('Startmejl:', e.message));
   }
   res.status(201).json(manageRound(r));
 });
@@ -555,7 +561,7 @@ app.post('/api/rounds/:slug/orders', (req, res) => {
   if (r.pay_mode === 'before' && mailConfigured) {
     const o = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(payToken);
     payMail(o, r, '')
-      .then((m) => transporter.sendMail({ from: SMTP.from, to: o.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments }))
+      .then((m) => sendMail({ to: o.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments }))
       .then(() => db.prepare('UPDATE orders SET pay_mail_at = ? WHERE id = ?').run(new Date().toISOString(), o.id))
       .catch((e) => console.error(`Betalmejl #${o.nr}:`, e.message));
   }
@@ -759,15 +765,16 @@ app.delete('/api/rounds/:slug/orders/:nr', requireRound, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- Mail templates: plain white, "Sammat" wordmark, just the facts ----------
-const FONT = 'Roboto,Helvetica,Arial,sans-serif';
-const SLAB = "'Roboto Slab',Georgia,'Times New Roman',serif";
+// ---------- Mail templates: plain white, logo image, just the facts ----------
+const FONT = "'Nunito Sans',Helvetica,Arial,sans-serif";
+const SLAB = "Bitter,Rockwell,Georgia,'Times New Roman',serif";
 
 function mailLayout(bodyHtml) {
   return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="color-scheme" content="light"></head>
 <body style="margin:0;padding:0;background:#ffffff;color:#1e272e;font-family:${FONT};font-size:15px;line-height:1.5">
   <div style="max-width:480px;margin:0 auto;padding:28px 20px">
-    <div style="font-family:${SLAB};font-weight:700;font-size:24px;color:#f53b57;margin-bottom:20px">Sammat</div>
+    <div style="margin-bottom:20px"><img src="cid:sammatlogo" width="122" height="36" alt="SamMat"
+      style="display:block;border:0;width:122px;height:36px;font-family:Impact,'Arial Black',sans-serif;font-size:26px;color:#f53b57"></div>
     ${bodyHtml}
     <div style="margin-top:28px;padding-top:12px;border-top:1px solid #e6e8eb;color:#8a929b;font-size:12px">
       ${escHtml(PUBLIC_URL.replace(/^https?:\/\//, ''))}
@@ -938,7 +945,7 @@ async function sendBatch(orders, build, stampCol) {
     if (!o.email) { result.skipped += 1; continue; }
     try {
       const m = await build(o);
-      await transporter.sendMail({ from: SMTP.from, to: o.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments });
+      await sendMail({ to: o.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments });
       db.prepare(`UPDATE orders SET ${stampCol} = ? WHERE id = ?`).run(new Date().toISOString(), o.id);
       result.sent += 1;
     } catch (e) {
@@ -994,7 +1001,7 @@ app.post('/api/rounds/:slug/mail/orders', requireRound, async (req, res) => {
   const r = req.round;
   if (!r.creator_email) return res.status(400).json({ error: 'Ingen e-post angiven för rundan. Lägg till den under Inställningar.' });
   try {
-    await transporter.sendMail({ from: SMTP.from, to: r.creator_email, ...orderListMail(r, ordersOf(r.id)) });
+    await sendMail({ to: r.creator_email, ...orderListMail(r, ordersOf(r.id)) });
     db.prepare('UPDATE rounds SET orders_mailed_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
     res.json({ ok: true, to: r.creator_email });
   } catch (e) {
@@ -1007,7 +1014,7 @@ async function onClosed(r) {
   if (!r.mail_orders || !r.creator_email || r.orders_mailed_at || !mailConfigured) return;
   db.prepare('UPDATE rounds SET orders_mailed_at = ? WHERE id = ?').run(new Date().toISOString(), r.id);
   try {
-    await transporter.sendMail({ from: SMTP.from, to: r.creator_email, ...orderListMail(r, ordersOf(r.id)) });
+    await sendMail({ to: r.creator_email, ...orderListMail(r, ordersOf(r.id)) });
     console.log(`Orderlista mejlad till skaparen av ${r.slug}.`);
   } catch (e) {
     db.prepare('UPDATE rounds SET orders_mailed_at = NULL WHERE id = ?').run(r.id);
@@ -1174,7 +1181,7 @@ app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
 app.post('/api/admin/webhooks/test', requireAdmin, async (req, res) => {
   const url = clean(req.body.url, 1000);
   if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: "Ogiltig adress." });
-  const fake = { slug: 'test', name: 'Testrunda', place_name: 'Pizzeria Test', creator_name: 'Sammat', event_date: todayStr(),
+  const fake = { slug: 'test', name: 'Testrunda', place_name: 'Pizzeria Test', creator_name: 'SamMat', event_date: todayStr(),
     close_at: null, food_eta: '12:00', is_open: 1 };
   try {
     await postHook({ url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json' }, 'round.created', fake);
@@ -1189,10 +1196,10 @@ app.post('/api/admin/mail/test', requireAdmin, async (req, res) => {
   const to = clean(req.body.to, 120);
   if (!isEmail(to)) return res.status(400).json({ error: 'Ange en giltig adress.' });
   try {
-    await transporter.sendMail({
-      from: SMTP.from, to, subject: 'Sammat – testmejl',
-      text: 'Det här är ett testmejl från Sammat. SMTP fungerar!',
-      html: mailLayout('<p style="margin:0">Det här är ett testmejl från Sammat. SMTP fungerar!</p>')
+    await sendMail({
+      to, subject: 'SamMat – testmejl',
+      text: 'Det här är ett testmejl från SamMat. SMTP fungerar!',
+      html: mailLayout('<p style="margin:0">Det här är ett testmejl från SamMat. SMTP fungerar!</p>')
     });
     res.json({ ok: true });
   } catch (e) {
@@ -1270,7 +1277,7 @@ setInterval(() => autoPayRemind().catch((e) => console.error('Betalpåminnelse:'
 setInterval(autoPurge, 3600 * 1000).unref();
 
 // ---------- Start / stop ----------
-const server = app.listen(PORT, '0.0.0.0', () => console.log(`Sammat kör på port ${PORT}`));
+const server = app.listen(PORT, '0.0.0.0', () => console.log(`SamMat kör på port ${PORT}`));
 
 function shutdown() {
   server.close(() => { db.close(); process.exit(0); });

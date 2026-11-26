@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0 – 2026-11-26
+- New look: "SamMat" logo in Bangers, headings in Bitter, text in Nunito Sans (all served locally via @fontsource).
+- Logo as an inline image in every mail; favicon and app icon.
+- Installable as an app (PWA): "Installera" button in Chrome/Edge/Android, instructions for Safari on iPhone/iPad/Mac. Shown on the start page and after ordering; can be dismissed.
+
 ## 2.2.0 – 2026-11-26
 - Shared cost (e.g. delivery) split equally over everyone who ordered; payments are tracked as amounts, so a later change only asks for the difference.
 - Optional automatic payment reminder (2 h / 4 h / 24 h / 48 h after the payment mail).

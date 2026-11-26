@@ -3,22 +3,28 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sammat – sambeställning av mat med Swish</title>
-  <meta name="description" content="Sammat är en liten självhostad webbapp för att samla ihop matbeställningar på jobbet eller i föreningen, med Swish-QR, påminnelser och orderlista till restaurangen." />
+  <title>SamMat – sambeställning av mat med Swish</title>
+  <link rel="icon" href="favicon.png" />
+  <meta name="description" content="SamMat är en liten självhostad webbapp för att samla ihop matbeställningar på jobbet eller i föreningen, med Swish-QR, påminnelser och orderlista till restaurangen." />
   <style>
+    @font-face { font-family: 'Bangers'; font-display: swap; src: url('fonts/bangers-latin-400-normal.woff2') format('woff2'); }
+    @font-face { font-family: 'Bitter'; font-weight: 600; font-display: swap; src: url('fonts/bitter-latin-600-normal.woff2') format('woff2'); }
+    @font-face { font-family: 'Bitter'; font-weight: 700; font-display: swap; src: url('fonts/bitter-latin-700-normal.woff2') format('woff2'); }
+    @font-face { font-family: 'Nunito Sans'; font-weight: 400; font-display: swap; src: url('fonts/nunito-sans-latin-400-normal.woff2') format('woff2'); }
+    @font-face { font-family: 'Nunito Sans'; font-weight: 700; font-display: swap; src: url('fonts/nunito-sans-latin-700-normal.woff2') format('woff2'); }
     :root {
       --bg: #1e272e; --card: #273139; --line: #3d4a54; --text: #f1f2f6; --muted: #a4b0be;
       --red: #f53b57; --yellow: #ffd32a; --purple: #474787; --green: #05c46b;
-      font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif; color-scheme: dark;
+      font-family: 'Nunito Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; color-scheme: dark;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; }
     a { color: var(--yellow); }
     .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
-    h1, h2, h3, .logo { font-family: 'Roboto Slab', Georgia, serif; }
+    h1, h2, h3 { font-family: Bitter, Rockwell, Georgia, serif; font-weight: 700; }
     header { padding: 56px 0 30px; }
-    .logo { color: var(--red); font-size: 3.2rem; font-weight: 700; display: inline-block; transform: rotate(-2deg); margin: 0; }
-    .tagline { font-size: 1.3rem; color: var(--muted); margin: 6px 0 22px; max-width: 640px; }
+    .logo { font-family: Bangers, Impact, 'Arial Black', sans-serif; color: var(--red); font-size: 4.6rem; line-height: 1; letter-spacing: .03em; display: inline-block; transform: rotate(-3deg); text-shadow: 5px 5px 0 var(--purple); margin: 0; }
+    .tagline { font-size: 1.3rem; color: var(--muted); margin: 22px 0 24px; max-width: 640px; }
     .buttons { display: flex; flex-wrap: wrap; gap: 12px; }
     .btn { display: inline-block; text-decoration: none; background: var(--red); color: #fff; padding: 12px 20px; border-radius: 10px;
       font-weight: 700; box-shadow: 4px 4px 0 var(--purple); }
@@ -32,7 +38,7 @@
     .step img { width: 100%; border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.45); display: block; }
     .step img.phone { max-width: 300px; margin: 0 auto; max-height: 600px; object-fit: cover; object-position: top; }
     .step img.tall { max-height: 520px; object-fit: cover; object-position: top; }
-    .num { display: inline-block; font-family: 'Roboto Slab', Georgia, serif; background: var(--yellow); color: var(--bg); font-weight: 700;
+    .num { display: inline-block; font-family: Bitter, Georgia, serif; background: var(--yellow); color: var(--bg); font-weight: 700;
       width: 34px; height: 34px; line-height: 34px; text-align: center; border-radius: 50%; margin-right: 8px; }
     .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
     .feature { background: var(--card); border-radius: 12px; padding: 18px 20px; border-left: 4px solid var(--red); }
@@ -58,7 +64,7 @@
 <body>
   <div class="wrap">
     <header>
-      <p class="logo">Sammat</p>
+      <p class="logo">SamMat</p>
       <p class="tagline">Sambeställ maten på jobbet eller i föreningen. Folk väljer själva, du får en färdig orderlista, och alla swishar rätt belopp.</p>
       <div class="buttons">
         <a class="btn" href="#installera">Installera</a>
@@ -109,7 +115,7 @@
     <div class="step">
       <div class="text">
         <h3><span class="num">5</span>Påminnelse och bekräftelse</h3>
-        <p>Bokar ni flera dagar i förväg kan Sammat skicka en påminnelse dagen innan eller samma morgon, och be alla <em>bekräfta</em> eller <em>avboka</em>. Avbokade försvinner från listan.
+        <p>Bokar ni flera dagar i förväg kan SamMat skicka en påminnelse dagen innan eller samma morgon, och be alla <em>bekräfta</em> eller <em>avboka</em>. Avbokade försvinner från listan.
           Länken i mejlet öppnar en sida där man trycker själv, så att skräppostfilter inte avbokar någon.</p>
       </div>
       <img src="img/mail-reminder.png" alt="Påminnelse med Bekräfta och Avboka" />
@@ -126,6 +132,7 @@
       <div class="feature"><h3>Teams, Slack, Discord</h3><p>Webhooks när en runda startar, stängs eller maten är här. Teams via Workflows, utan Entra-admin. Eller JSON till valfri tjänst.</p></div>
       <div class="feature"><h3>Flera rundor</h3><p>Olika rundor, ställen och datum samtidigt, med egen numrering från #1 och eget Swish-nummer.</p></div>
       <div class="feature"><h3>Rensar efter sig</h3><p>Avsluta en runda så raderas alla namn och e-postadresser på riktigt. Gamla rundor rensas automatiskt.</p></div>
+      <div class="feature"><h3>Som en app</h3><p>Spara SamMat på hemskärmen eller i Dock – en knapp i Chrome och Edge, en kort instruktion i Safari.</p></div>
       <div class="feature"><h3>Litet och självhostat</h3><p>En container, en SQLite-fil. Node.js + Express. Mejl via valfri SMTP-server.</p></div>
     </div>
 
@@ -169,21 +176,21 @@ podman-compose -f sammat-compose.yaml up -d</code></pre>
       <tr><td><code>ADMIN_PIN</code></td><td>PIN för <code>/admin</code> (ställen, menyer, alla rundor). Minst 4 tecken.</td></tr>
       <tr><td><code>PUBLIC_URL</code></td><td>Den publika adressen, används i länkar i mejl.</td></tr>
       <tr><td><code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code></td><td>SMTP för mejl (valfritt). Port 465 = TLS, annars STARTTLS.</td></tr>
-      <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>Sammat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
+      <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>SamMat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
       <tr><td><code>PURGE_DAYS</code></td><td>Rundor raderas så här många dagar efter sitt datum (standard 7).</td></tr>
       <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
       <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>
     </table>
 
     <h2>Integritet</h2>
-    <p class="muted">Sammat sparar namn, e-post och beställning per runda. När rundan avslutas raderas allt med <code>secure_delete</code>, så att det inte ligger kvar i databasfilen.
+    <p class="muted">SamMat sparar namn, e-post och beställning per runda. När rundan avslutas raderas allt med <code>secure_delete</code>, så att det inte ligger kvar i databasfilen.
       Rundor som är äldre än <code>PURGE_DAYS</code> dagar efter sitt datum raderas automatiskt. "Kom ihåg min beställning" är opt-in: e-posten sparas bara som en HMAC-nyckel,
-      och på <code>/integritet</code> kan man låta Sammat glömma allt. Inga spårare och inga externa resurser – typsnitten serveras lokalt.</p>
+      och på <code>/integritet</code> kan man låta SamMat glömma allt. Inga spårare och inga externa resurser – typsnitten serveras lokalt.</p>
 
     <footer>
-      Sammat är fri programvara under <a href="https://github.com/lyzio/SamMat/blob/master/LICENSE">GNU AGPL v3</a>. ·
+      SamMat är fri programvara under <a href="https://github.com/lyzio/SamMat/blob/master/LICENSE">GNU AGPL v3</a>. ·
       <a href="https://github.com/lyzio/SamMat">GitHub</a> ·
-      Swish är ett varumärke som tillhör Getswish AB; Sammat har ingen koppling till Swish.
+      Swish är ett varumärke som tillhör Getswish AB; SamMat har ingen koppling till Swish.
     </footer>
   </div>
 </body>
