@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SamMat – Sambeställning</title>
+  <title>SamMat</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
@@ -16,11 +16,11 @@
   <div class="wrap wide">
     <div class="topbar" style="max-width:560px;margin-left:auto;margin-right:auto">
       <a href="/" class="logo">SamMat</a>
-      <a href="admin" id="manageLink">Hantera</a>
+      <a href="admin" id="manageLink" data-sv="Hantera" data-en="Manage">Hantera</a>
     </div>
     <div class="stage" id="stage">
       <div class="wall left" id="wallL"></div>
-      <div class="card" id="app" style="width:100%;max-width:560px;margin-left:auto;margin-right:auto"><p class="muted">Laddar…</p></div>
+      <div class="card" id="app" style="width:100%;max-width:560px;margin-left:auto;margin-right:auto"><p class="muted">…</p></div>
       <div class="wall right" id="wallR"></div>
     </div>
     <div class="wall-title" id="wallTitle"></div>
@@ -28,12 +28,16 @@
   </div>
 
   <script>
-    const slug = location.pathname.split('/')[2];
+    const parts = location.pathname.split('/');
+    const slug = parts[2];
+    const editToken = parts[3] === 'andra' ? parts[4] : null; // /r/<slug>/andra/<token> = change an existing order
     document.getElementById('manageLink').href = `/r/${slug}/admin`;
     const appEl = document.getElementById('app');
     let round = null;
     let mode = null; // 'form' | 'closed' | 'done' | 'gone'
+    let editing = null; // the order being changed (edit mode)
     const seen = new Set();
+    let INFO = { favoriteDays: 180 };
 
     // ---------- Note wall ----------
     function renderWall(board) {
@@ -42,12 +46,10 @@
         const fresh = seen.size && !seen.has(b.nr) ? ' new' : '';
         return `<div class="note c${b.nr % 5}${fresh}" style="--rot:${rot}deg"><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
       };
-      const left = board.filter((_, i) => i % 2 === 0);
-      const right = board.filter((_, i) => i % 2 === 1);
-      document.getElementById('wallL').innerHTML = left.map(note).join('');
-      document.getElementById('wallR').innerHTML = right.map(note).join('');
+      document.getElementById('wallL').innerHTML = board.filter((_, i) => i % 2 === 0).map(note).join('');
+      document.getElementById('wallR').innerHTML = board.filter((_, i) => i % 2 === 1).map(note).join('');
       document.getElementById('wallB').innerHTML = board.map(note).join('');
-      document.getElementById('wallTitle').textContent = board.length ? `Redan beställt (${board.length})` : '';
+      document.getElementById('wallTitle').textContent = board.length ? `${L('Redan beställt', 'Already ordered')} (${board.length})` : '';
       document.getElementById('stage').classList.toggle('has-notes', board.length > 0);
       board.forEach((b) => seen.add(b.nr));
       if (!seen.size) seen.add(-1); // first load done: later additions animate
@@ -59,11 +61,19 @@
           ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
           ${r.locationName ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
           ${r.companyName ? `<span>🏢 ${esc(r.companyName)}</span>` : ''}
-          <span>av ${esc(r.creatorName)}</span>
-          ${r.isToday ? '' : `<span>För <strong>${esc(dayWord(r.eventDate))}</strong></span>`}
-          ${r.isOpen && r.closeAt ? `<span>Beställ senast <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : ''}
-          ${r.foodEta ? `<span>Mat ca <strong>${esc(r.foodEta)}</strong></span>` : ''}
+          <span>${L('av', 'by')} ${esc(r.creatorName)}</span>
+          ${r.isToday ? '' : `<span>${L('För', 'For')} <strong>${esc(dayWord(r.eventDate))}</strong></span>`}
+          ${r.isOpen && r.closeAt ? `<span>${L('Beställ senast', 'Order by')} <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : ''}
+          ${r.foodEta ? `<span>${L('Mat ca', 'Food approx.')} <strong>${esc(r.foodEta)}</strong></span>` : ''}
         </div>`;
+    }
+
+    // Orders placed from this browser, with links to change them
+    function mineHtml() {
+      const list = myOrders.list(slug).filter((m) => m.token !== editToken);
+      if (!list.length) return '';
+      return `<div class="mine">${L('Dina beställningar här', 'Your orders here')}: ${list.map((m) =>
+        `<div>#${m.nr} ${esc(m.text)} – <a href="/r/${slug}/andra/${esc(m.token)}">${L('Ändra', 'Change')}</a></div>`).join('')}</div>`;
     }
 
     async function load() {
@@ -72,7 +82,8 @@
       } catch (e) {
         if (e.status === 404) {
           mode = 'gone';
-          appEl.innerHTML = `<h1>Sambeställningen är avslutad</h1><p class="muted">${esc(e.message)}</p><a class="cta" href="/">Se pågående sambeställningar</a>`;
+          appEl.innerHTML = `<h1>${L('Sambeställningen är avslutad', 'This group order has ended')}</h1><p class="muted">${esc(e.message)}</p>
+            <a class="cta" href="/">${L('Se pågående sambeställningar', 'See ongoing group orders')}</a>`;
           renderWall([]);
         }
         return;
@@ -84,72 +95,146 @@
         if (mode !== 'closed') {
           mode = 'closed';
           appEl.innerHTML = `<h1>${esc(round.title)}</h1>${infoHtml(round)}
-            <p style="margin-top:16px">Beställningen är <strong>stängd</strong>. ${round.orderCount} st beställde.</p>`;
+            <p style="margin-top:16px">${L('Beställningen är <strong>stängd</strong>.', 'Ordering is <strong>closed</strong>.')} ${round.orderCount} ${L('st beställde.', 'orders.')}</p>
+            ${editToken ? `<p class="muted">${L(`Kontakta ${esc(round.creatorName)} om något ska ändras.`, `Contact ${esc(round.creatorName)} if something needs to change.`)}</p>` : ''}
+            ${mineHtml()}`;
         }
         return;
       }
-      if (mode !== 'form') { mode = 'form'; renderForm(); }
+      if (mode !== 'form') { mode = 'form'; await renderForm(); }
       else document.getElementById('info').outerHTML = infoHtml(round);
     }
 
+    // ---------- Form ----------
+    const drinkQty = new Map(); // drink id -> qty
+
+    function optionsFor(itemId) {
+      const fits = (o) => !o.appliesTo || (itemId && o.appliesTo.includes(itemId));
+      return { addons: round.addons.filter(fits), removals: round.removals.filter(fits) };
+    }
+
     function total() {
-      const item = round.menu.find((m) => m.id === Number(document.getElementById('menu').value));
+      const itemId = Number(document.getElementById('menu').value);
+      const item = round.menu.find((m) => m.id === itemId);
       let sum = item ? item.price : 0;
       document.querySelectorAll('input[name="addon"]:checked').forEach((cb) => {
         const a = round.addons.find((x) => x.id === Number(cb.value));
         if (a) sum += a.price;
       });
+      for (const [id, q] of drinkQty) { const d = round.drinks.find((x) => x.id === id); if (d) sum += d.price * q; }
       document.getElementById('total').textContent = `${sum} kr`;
     }
 
-    function renderForm() {
-      const opt = (list, name, showPrice) => list.map((o) => `
+    // Add-ons/removals depend on the chosen dish; keep what's still valid
+    function renderOptions(keep) {
+      const itemId = Number(document.getElementById('menu').value) || null;
+      const { addons, removals } = optionsFor(itemId);
+      const checked = new Set(keep || [...document.querySelectorAll('input[name="addon"]:checked, input[name="removal"]:checked')].map((c) => Number(c.value)));
+      const row = (o, name, showPrice) => `
         <label class="opt-row">
-          <span><input type="checkbox" name="${name}" value="${o.id}" /> ${esc(o.name)}</span>
+          <span><input type="checkbox" name="${name}" value="${o.id}" ${checked.has(o.id) ? 'checked' : ''} /> ${esc(o.name)}</span>
           ${showPrice ? `<span class="price">${o.price > 0 ? '+' + o.price + ' kr' : '0 kr'}</span>` : ''}
-        </label>`).join('');
+        </label>`;
+      document.getElementById('opts').innerHTML = `
+        ${addons.length ? `<label>${L('Tillval', 'Add-ons')}</label><div class="opt-list">${addons.map((o) => row(o, 'addon', true)).join('')}</div>` : ''}
+        <label>${L('Bortval', 'Leave out')}</label>
+        ${removals.length ? `<div class="opt-list">${removals.map((o) => row(o, 'removal', false)).join('')}</div>` : ''}`;
+      total();
+    }
 
+    function renderDrinks() {
+      const el = document.getElementById('drinks');
+      if (!round.drinks.length) { el.innerHTML = ''; return; }
+      el.innerHTML = `
+        <label>${L('Dricka', 'Drinks')} <span class="muted">(${L('valfritt – hämtas själv när maten kommer', 'optional – pick it up when the food arrives')})</span></label>
+        <div class="opt-list">${round.drinks.map((d) => `
+          <div class="opt-row drink">
+            <span>${esc(d.name)} <span class="price" style="margin-left:6px">${d.price} kr</span></span>
+            <span class="qty"><button type="button" data-dq="${d.id}" data-d="-1" aria-label="−">−</button>
+              <span id="dq${d.id}">${drinkQty.get(d.id) || 0}</span>
+              <button type="button" data-dq="${d.id}" data-d="1" aria-label="+">+</button></span>
+          </div>`).join('')}</div>`;
+      el.querySelectorAll('[data-dq]').forEach((b) => {
+        b.onclick = () => {
+          const id = Number(b.dataset.dq);
+          const q = Math.max(0, Math.min(10, (drinkQty.get(id) || 0) + Number(b.dataset.d)));
+          if (q) drinkQty.set(id, q); else drinkQty.delete(id);
+          document.getElementById('dq' + id).textContent = q;
+          total();
+        };
+      });
+    }
+
+    // Fill the form from a saved selection (edit mode or "same as last time")
+    function applySelection(sel) {
+      if (!sel) return;
+      document.getElementById('menu').value = String(sel.menuItemId || '');
+      renderOptions([...(sel.addonIds || []), ...(sel.removalIds || [])]);
+      document.getElementById('customRemoval').value = sel.customRemoval ?? sel.custom ?? '';
+      drinkQty.clear();
+      for (const e of sel.extras || []) drinkQty.set(e.id, e.qty);
+      renderDrinks();
+      total();
+    }
+
+    async function renderForm() {
+      if (editToken && !editing) {
+        try { editing = await api('/api/order/' + encodeURIComponent(editToken)); } catch (e) {
+          appEl.innerHTML = `<h1>${L('Hittades inte', 'Not found')}</h1><p class="muted">${esc(e.message)}</p>`;
+          return;
+        }
+      }
+      const ed = editing;
       appEl.innerHTML = `
-        <h1>${esc(round.title)}</h1>
+        <h1>${ed ? `${L('Ändra beställning', 'Change order')} #${ed.nr}` : esc(round.title)}</h1>
         ${infoHtml(round)}
-        <p class="muted">${round.payMode === 'before' ? 'Du swishar direkt när du har beställt.' : 'Du betalar efter maten – du får ett mejl med belopp och Swish.'}</p>
+        ${ed ? `<p class="muted">${ed.cancelled ? L('Den här beställningen är <strong>avbokad</strong>. Spara för att boka den igen.', 'This order is <strong>cancelled</strong>. Save to book it again.')
+              : L('Ändra och spara, eller avboka.', 'Change and save, or cancel.')}${round.closeAt ? ` ${L('Går att ändra till', 'Can be changed until')} ${esc(whenShort(round.closeAt))}.` : ''}</p>`
+            : `<p class="muted">${round.payMode === 'before' ? L('Du swishar direkt när du har beställt.', 'You pay with Swish right after ordering.')
+              : L('Du betalar efter maten – du får ett mejl med belopp och Swish.', 'You pay after the food – you get an e-mail with the amount and Swish.')}</p>`}
+        ${ed ? '' : mineHtml()}
         <form id="f">
-          <label for="name">Ditt namn</label>
-          <input id="name" type="text" required maxlength="40" placeholder="T.ex. Maja" autocomplete="given-name" value="${esc(store.get('sammat_name'))}" />
+          <label for="name">${L('Ditt namn', 'Your name')}</label>
+          <input id="name" type="text" required maxlength="40" autocomplete="given-name" value="${esc(ed ? ed.customerName : store.get('sammat_name'))}" />
 
-          <label for="email">E-post</label>
-          <input id="email" type="email" required maxlength="120" placeholder="namn@exempel.se" autocomplete="email" value="${esc(store.get('sammat_email'))}" />
+          <label for="email">${L('E-post', 'E-mail')}</label>
+          <input id="email" type="email" required maxlength="120" placeholder="${L('namn@exempel.se', 'name@example.com')}" autocomplete="email" value="${esc(ed ? ed.email : store.get('sammat_email'))}" />
 
           <div id="last"></div>
 
-          <label for="menu">Produkt</label>
+          <label for="menu">${L('Rätt', 'Dish')}</label>
           <select id="menu" required>
-            <option value="">– Välj –</option>
+            <option value="">– ${L('Välj', 'Choose')} –</option>
             ${round.menu.map((m) => `<option value="${m.id}">${esc(m.name)} (${m.price} kr)</option>`).join('')}
           </select>
 
-          ${round.addons.length ? `<label>Tillval</label><div class="opt-list">${opt(round.addons, 'addon', true)}</div>` : ''}
+          <div id="opts"></div>
+          <input id="customRemoval" type="text" maxlength="120" placeholder="${L('Valfri bortval eller allergier', 'Other changes or allergies')}" style="margin-top:8px" />
 
-          <label>Bortval</label>
-          ${round.removals.length ? `<div class="opt-list">${opt(round.removals, 'removal', false)}</div>` : ''}
-          <input id="customRemoval" type="text" maxlength="120" placeholder="Valfri bortval eller allergier" style="margin-top:8px" />
+          <div id="drinks"></div>
 
           <label class="check"><input type="checkbox" id="remember" ${store.get('sammat_remember') === '1' ? 'checked' : ''} />
-            <span>Kom ihåg min beställning hos ${esc(round.placeName)} till nästa gång
-              <span class="muted" style="display:block;font-size:.8rem">Sparar namn, beställning och en krypterad nyckel av din e-post i ${INFO.favoriteDays} dagar. <a href="/integritet">Läs mer / glöm mig</a></span></span></label>
+            <span>${L(`Kom ihåg min beställning hos ${esc(round.placeName)} till nästa gång`, `Remember my order at ${esc(round.placeName)} for next time`)}
+              <span class="muted" style="display:block;font-size:.8rem">${L(`Sparar namn, beställning och en krypterad nyckel av din e-post i ${INFO.favoriteDays} dagar.`,
+                `Stores your name, order and an encrypted key of your e-mail for ${INFO.favoriteDays} days.`)} <a href="/integritet">${L('Läs mer / glöm mig', 'Read more / forget me')}</a></span></span></label>
 
-          <div class="summary"><span>Pris (enligt meny)</span><span id="total">0 kr</span></div>
+          <div class="summary"><span>${L('Pris (enligt meny)', 'Price (menu)')}</span><span id="total">0 kr</span></div>
           <div id="err"></div>
-          <button type="submit" class="primary" id="submit">Skicka beställning</button>
+          <button type="submit" class="primary" id="submit">${ed ? L('Spara ändringen', 'Save changes') : L('Skicka beställning', 'Place order')}</button>
+          ${ed && !ed.cancelled ? `<button type="button" class="danger full" id="cancelOrder">${L('Avboka beställningen', 'Cancel the order')}</button>` : ''}
         </form>`;
 
-      const form = document.getElementById('f');
-      form.addEventListener('change', total);
+      renderOptions([]);
+      renderDrinks();
+      document.getElementById('menu').addEventListener('change', () => renderOptions());
+      document.getElementById('f').addEventListener('change', total);
+      if (ed) applySelection(ed.selection);
       total();
 
-      // "Same as last time": look up by e-mail + name for this place
+      // "Same as last time": look up by e-mail + name for this place (not when changing an order)
       let lastKey = '';
       async function checkLast() {
+        if (ed) return;
         const email = document.getElementById('email').value.trim();
         const name = document.getElementById('name').value.trim();
         const key = email.toLowerCase() + '|' + name.toLowerCase();
@@ -159,22 +244,31 @@
         try { f = await api(`/api/rounds/${slug}/last`, 'POST', { email, name }); } catch { return; }
         const el = document.getElementById('last');
         if (!f.found) { el.innerHTML = ''; return; }
-        el.innerHTML = `<div class="last-box"><span>Samma som förra gången?<br><strong>${esc(f.label)}</strong></span>
-          <button type="button" class="secondary small" id="useLast">Fyll i</button></div>`;
+        el.innerHTML = `<div class="last-box"><span>${L('Samma som förra gången?', 'Same as last time?')}<br><strong>${esc(f.label)}</strong></span>
+          <button type="button" class="secondary small" id="useLast">${L('Fyll i', 'Fill in')}</button></div>`;
         document.getElementById('useLast').onclick = () => {
-          document.getElementById('menu').value = String(f.menuItemId);
-          document.querySelectorAll('input[name="addon"]').forEach((cb) => { cb.checked = f.addonIds.includes(Number(cb.value)); });
-          document.querySelectorAll('input[name="removal"]').forEach((cb) => { cb.checked = f.removalIds.includes(Number(cb.value)); });
-          document.getElementById('customRemoval').value = f.custom || '';
+          applySelection(f);
           document.getElementById('remember').checked = true;
-          total();
-          el.innerHTML = '<div class="last-box"><span>✓ Ifyllt som förra gången – ändra om du vill.</span></div>';
+          el.innerHTML = `<div class="last-box"><span>✓ ${L('Ifyllt som förra gången – ändra om du vill.', 'Filled in like last time – change it if you like.')}</span></div>`;
         };
       }
       ['email', 'name'].forEach((id) => document.getElementById(id).addEventListener('change', checkLast));
       checkLast();
 
-      form.addEventListener('submit', async (e) => {
+      const cancelBtn = document.getElementById('cancelOrder');
+      if (cancelBtn) cancelBtn.onclick = act(async () => {
+        if (!confirm(L(`Avboka beställning #${ed.nr}?`, `Cancel order #${ed.nr}?`))) return;
+        editing = await api(`/api/order/${encodeURIComponent(editToken)}/cancel`, 'POST', {});
+        myOrders.remove(slug, editToken);
+        mode = 'done';
+        appEl.innerHTML = `<h1>${L('Avbokad', 'Cancelled')}</h1>
+          <p>${L(`Beställning #${editing.nr} är avbokad.`, `Order #${editing.nr} is cancelled.`)}</p>
+          <p class="muted">${L('Ångrat dig? Öppna samma länk igen och spara så länge beställningen är öppen.', 'Changed your mind? Open the same link again and save while ordering is open.')}</p>
+          <a class="cta" href="/r/${slug}">${L('Till beställningssidan', 'To the order page')}</a>`;
+        load();
+      });
+
+      document.getElementById('f').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('submit');
         const err = document.getElementById('err');
@@ -187,14 +281,24 @@
           addonIds: [...document.querySelectorAll('input[name="addon"]:checked')].map((x) => Number(x.value)),
           removalIds: [...document.querySelectorAll('input[name="removal"]:checked')].map((x) => Number(x.value)),
           customRemoval: document.getElementById('customRemoval').value.trim(),
+          extras: [...drinkQty].map(([id, qty]) => ({ id, qty })),
           remember: document.getElementById('remember').checked
         };
         try {
-          const o = await api(`/api/rounds/${slug}/orders`, 'POST', body);
           store.set('sammat_name', body.customerName);
           store.set('sammat_email', body.email);
           store.set('sammat_remember', body.remember ? '1' : '0');
-          renderDone(o);
+          if (ed) {
+            editing = await api('/api/order/' + encodeURIComponent(editToken), 'PUT', body);
+            myOrders.add(slug, { token: editToken, nr: editing.nr, text: editing.text });
+            renderSaved(editing);
+          } else {
+            const o = await api(`/api/rounds/${slug}/orders`, 'POST', body);
+            const text = [o.itemName, o.addonsText, o.removalsText].filter(Boolean).join(' - ') + (o.extrasText ? ` + ${o.extrasText}` : '');
+            myOrders.add(slug, { token: o.editToken, nr: o.nr, text });
+            o.text = text;
+            o.payMode === 'before' ? await renderPayNow(o) : renderDone(o);
+          }
           load();
         } catch (ex) {
           err.innerHTML = `<div class="error">${esc(ex.message)}</div>`;
@@ -203,53 +307,77 @@
       });
     }
 
-    async function renderDone(o) {
-      mode = 'done';
-      if (o.payMode === 'before') return renderPayNow(o);
-      appEl.innerHTML = `
-        <h1>Beställning mottagen ✓</h1>
-        <p class="muted">Tack, <strong>${esc(o.customerName)}</strong>!</p>
-        <div class="box">
-          <div><strong>Produkt:</strong> ${esc(o.itemName)}</div>
-          ${o.addonsText ? `<div><strong>Tillval:</strong> ${esc(o.addonsText)}</div>` : ''}
-          ${o.removalsText ? `<div><strong>Bortval:</strong> ${esc(o.removalsText)}</div>` : ''}
-          <div class="amount">ca ${o.totalPrice} kr</div>
-        </div>
-        ${o.isToday ? '' : `<p>Maten är för <strong>${esc(dayWord(o.eventDate))}</strong>.</p>`}
-        ${o.reminderAt ? `<p>Du får en påminnelse ${esc(whenShort(o.reminderAt))}${o.confirm ? ' där du bekräftar eller avbokar' : ''}.</p>` : ''}
-        <p>Betala inte nu. Du får ett mejl till <strong>${esc(o.email)}</strong> när maten är här${o.foodEta ? ` (ca ${esc(o.foodEta)})` : ''}, och ett med exakt belopp och Swish efteråt.</p>
-        <button class="secondary full" id="again">Lägg en beställning till</button>
-        <div id="install"></div>`;
-      document.getElementById('again').onclick = () => { mode = null; load(); };
+    // ---------- After ordering ----------
+    function editBoxHtml(token, closeAt) {
+      const url = `${location.origin}/r/${slug}/andra/${token}`;
+      return `<div class="editbox">${L('Vill du ändra eller avboka?', 'Want to change or cancel?')}
+        ${closeAt ? L(`Det går fram till <strong>${esc(whenShort(closeAt))}</strong>.`, `You can until <strong>${esc(whenShort(closeAt))}</strong>.`) : L('Det går så länge beställningen är öppen.', 'You can while ordering is open.')}
+        <div class="linkbox" style="margin-top:8px"><code>${esc(url)}</code><button type="button" class="secondary small" data-copy-edit="${esc(url)}">${L('Kopiera', 'Copy')}</button></div>
+        <p class="muted" style="margin:6px 0 0;font-size:.82rem">${L('Den här webbläsaren kommer ihåg länken på beställningssidan.', 'This browser remembers the link on the order page.')}</p></div>`;
+    }
+    function bindDone() {
+      const c = appEl.querySelector('[data-copy-edit]');
+      if (c) c.onclick = () => copyText(c.dataset.copyEdit, c);
+      document.getElementById('again').onclick = () => { mode = null; editing = null; history.replaceState(null, '', `/r/${slug}`); location.href = `/r/${slug}`; };
       renderInstall(document.getElementById('install'));
+    }
+
+    function renderDone(o) {
+      mode = 'done';
+      appEl.innerHTML = `
+        <h1>${L('Beställning mottagen', 'Order received')} ✓</h1>
+        <p class="muted">${L('Tack', 'Thanks')}, <strong>${esc(o.customerName)}</strong>! ${L('Ditt nummer', 'Your number')}: <strong>#${o.nr}</strong></p>
+        <div class="box">
+          <div>${esc(o.text)}</div>
+          <div class="amount">${L('ca', 'approx.')} ${o.totalPrice} kr</div>
+        </div>
+        ${o.isToday ? '' : `<p>${L('Maten är för', 'The food is for')} <strong>${esc(dayWord(o.eventDate))}</strong>.</p>`}
+        ${o.reminderAt ? `<p>${L(`Du får en påminnelse ${esc(whenShort(o.reminderAt))}${o.confirm ? ' där du bekräftar eller avbokar' : ''}.`,
+          `You get a reminder ${esc(whenShort(o.reminderAt))}${o.confirm ? ' where you confirm or cancel' : ''}.`)}</p>` : ''}
+        <p>${L(`Betala inte nu. Du får ett mejl till <strong>${esc(o.email)}</strong> när maten är här${o.foodEta ? ` (ca ${esc(o.foodEta)})` : ''}, och ett med exakt belopp och Swish efteråt.`,
+          `Don't pay now. You get an e-mail at <strong>${esc(o.email)}</strong> when the food is here${o.foodEta ? ` (approx. ${esc(o.foodEta)})` : ''}, and one with the exact amount and Swish afterwards.`)}</p>
+        ${editBoxHtml(o.editToken, o.closeAt)}
+        <button class="secondary full" id="again">${L('Lägg en beställning till', 'Place another order')}</button>
+        <div id="install"></div>`;
+      bindDone();
+    }
+
+    function renderSaved(o) {
+      mode = 'done';
+      appEl.innerHTML = `
+        <h1>${L('Ändringen är sparad', 'Changes saved')} ✓</h1>
+        <div class="box"><div><strong>#${o.nr}</strong> ${esc(o.text)}</div><div class="amount">${L('ca', 'approx.')} ${o.totalPrice} kr</div></div>
+        ${editBoxHtml(editToken, o.closeAt)}
+        <button class="secondary full" id="again">${L('Till beställningssidan', 'To the order page')}</button>
+        <div id="install"></div>`;
+      bindDone();
     }
 
     // Pay before: show amount, QR (desktop) and "Öppna Swish" right away
     async function renderPayNow(o) {
+      mode = 'done';
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       let p;
-      try { p = await api('/api/pay/' + o.payToken); } catch (e) { p = null; }
+      try { p = await api('/api/pay/' + o.payToken); } catch { p = null; }
       appEl.innerHTML = `
-        <h1>Beställning mottagen ✓</h1>
-        <p class="muted">Tack, <strong>${esc(o.customerName)}</strong>! Swisha nu:</p>
+        <h1>${L('Beställning mottagen', 'Order received')} ✓</h1>
+        <p class="muted">${L('Tack', 'Thanks')}, <strong>${esc(o.customerName)}</strong>! ${L('Swisha nu', 'Pay with Swish now')}:</p>
         <div class="box">
-          <div><strong>#${p ? p.orderNumber : ''}</strong> ${esc(p ? p.orderText : o.itemName)}</div>
+          <div><strong>#${o.nr}</strong> ${esc(o.text)}</div>
           <div class="amount">${o.totalPrice} kr</div>
-          ${p ? `<div class="muted" style="margin-top:4px">Till: ${esc(p.swishNumber)} · Meddelande: ”${esc(p.swishMessage)}”</div>` : ''}
+          ${p ? `<div class="muted" style="margin-top:4px">${L('Till', 'To')}: ${esc(p.swishNumber)} · ${L('Meddelande', 'Message')}: ”${esc(p.swishMessage)}”</div>` : ''}
         </div>
         ${p ? `
-          ${isMobile ? '' : `<div class="qr">${p.qrSvg}</div><p class="muted center">Skanna med Swish-appen</p>`}
-          <a class="swish" href="${esc(p.swishAppUrl)}">Öppna Swish</a>
-          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>Visa QR-kod</summary><div class="qr">${p.qrSvg}</div></details>` : ''}` : ''}
-        ${o.mailConfigured ? `<p class="muted" style="margin-top:14px">Betalinfon är också mejlad till ${esc(o.email)}${o.foodEta ? `. Maten kommer ca ${esc(o.foodEta)}` : ''}${o.isToday ? '' : ` ${esc(dayWord(o.eventDate))}`}.</p>` : ''}
-        ${o.reminderAt ? `<p class="muted">Du får en påminnelse ${esc(whenShort(o.reminderAt))}.</p>` : ''}
-        <button class="secondary full" id="again">Lägg en beställning till</button>
+          ${isMobile ? '' : `<div class="qr">${p.qrSvg}</div><p class="muted center">${L('Skanna med Swish-appen', 'Scan with the Swish app')}</p>`}
+          <a class="swish" href="${esc(p.swishAppUrl)}">${L('Öppna Swish', 'Open Swish')}</a>
+          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>${L('Visa QR-kod', 'Show QR code')}</summary><div class="qr">${p.qrSvg}</div></details>` : ''}` : ''}
+        ${o.mailConfigured ? `<p class="muted" style="margin-top:14px">${L(`Betalinfon är också mejlad till ${esc(o.email)}.`, `The payment info is also sent to ${esc(o.email)}.`)}</p>` : ''}
+        ${editBoxHtml(o.editToken, o.closeAt)}
+        <button class="secondary full" id="again">${L('Lägg en beställning till', 'Place another order')}</button>
         <div id="install"></div>`;
-      document.getElementById('again').onclick = () => { mode = null; load(); };
-      renderInstall(document.getElementById('install'));
+      bindDone();
     }
 
-    let INFO = { favoriteDays: 180 };
     api('/api/info').then((i) => { INFO = i; }).catch(() => {}).finally(() => { load(); setInterval(load, 10000); });
   </script>
 </body>

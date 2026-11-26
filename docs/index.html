@@ -123,6 +123,10 @@
 
     <h2>Funktioner</h2>
     <div class="features">
+      <div class="feature"><h3>Dricka på köpet</h3><p>Dryck med antal, samlad längst ner på orderlappen – den hämtar alla själva.</p></div>
+      <div class="feature"><h3>Ändra själv</h3><p>Efter beställningen får man en länk för att ändra eller avboka, ända fram till stopptiden.</p></div>
+      <div class="feature"><h3>Svenska &amp; English</h3><p>SV/EN-knapp på alla sidor. Mejlen skickas på mottagarens språk.</p></div>
+      <div class="feature"><h3>Klistra in menyn</h3><p>Klistra in hela menyn på en gång, förhandsgranska och importera. Tillval kan gälla bara vissa rätter.</p></div>
       <div class="feature"><h3>Ingen inloggning</h3><p>Beställare anger bara namn och e-post. Rundor skyddas med en slumpad PIN, admin med en egen PIN.</p></div>
       <div class="feature"><h3>Swish utan avtal</h3><p>Privat-Swish via QR-kod och swish://-länk med förifyllt belopp och meddelande. Inget företagsavtal eller certifikat.</p></div>
       <div class="feature"><h3>Kvittopris</h3><p>Justera vad var och en ska betala efter kvittot innan betalningsmejlet går ut. Bocka av vem som swishat.</p></div>
@@ -145,6 +149,8 @@
       <figure><img src="img/answer.png" alt="Bekräfta eller avboka" /><figcaption>Bekräfta eller avboka</figcaption></figure>
       <figure><img src="img/manage-reminder.png" alt="Status för påminnelse" /><figcaption>Status: bekräftat, väntar, avbokat</figcaption></figure>
       <figure><img src="img/admin.png" alt="Admin" /><figcaption>Admin: ställen, menyer och alla rundor</figcaption></figure>
+      <figure><img src="img/manage-en.png" alt="Manage in English" /><figcaption>In English – with drinks at the bottom of the order list</figcaption></figure>
+      <figure><img src="img/admin-menu.png" alt="Klistra in meny" /><figcaption>Klistra in en meny och förhandsgranska</figcaption></figure>
       <figure><img src="img/last.png" alt="Samma som förra gången" /><figcaption>Samma som förra gången</figcaption></figure>
       <figure><img src="img/webhooks.png" alt="Webhooks" /><figcaption>Webhooks till Teams, Slack, Discord eller JSON</figcaption></figure>
     </div>
@@ -181,6 +187,9 @@ podman-compose -f sammat-compose.yaml up -d</code></pre>
       <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>SamMat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
       <tr><td><code>PURGE_DAYS</code></td><td>Rundor raderas så här många dagar efter sitt datum (standard 7).</td></tr>
       <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
+      <tr><td><code>CREATE_PIN</code></td><td>Kräv en PIN för att starta en runda (tomt = vem som helst).</td></tr>
+      <tr><td><code>BACKUP_DAYS</code></td><td>Daglig backup i <code>data/backups/</code>, sparas så många dagar (standard 7, 0 = av).</td></tr>
+      <tr><td><code>ORDER_LIMIT</code></td><td>Max nya beställningar per IP och 10 minuter (standard 20).</td></tr>
       <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>
     </table>
 

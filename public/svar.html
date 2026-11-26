@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
   <meta name="referrer" content="no-referrer" />
-  <title>SamMat – Bekräfta</title>
+  <title>SamMat</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
@@ -17,7 +17,7 @@
 <body>
   <div class="wrap narrow">
     <div class="topbar"><a href="/" class="logo">SamMat</a></div>
-    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+    <div id="app" class="card"><p class="muted">…</p></div>
   </div>
   <script>
     const appEl = document.getElementById('app');
@@ -26,12 +26,12 @@
 
     function render(o, msg) {
       const state = o.cancelled
-        ? '<span class="st no">Avbokad</span>'
-        : o.confirmed ? '<span class="st yes">✓ Bekräftad</span>' : '<span class="st wait">Inte besvarad</span>';
+        ? `<span class="st no">${L('Avbokad', 'Cancelled')}</span>`
+        : o.confirmed ? `<span class="st yes">✓ ${L('Bekräftad', 'Confirmed')}</span>` : `<span class="st wait">${L('Inte besvarad', 'Not answered')}</span>`;
       appEl.innerHTML = `
         <h1>${esc(o.title)}</h1>
-        <div class="info"><span>${esc(o.placeName)}</span><span>För <strong>${esc(dayWord(o.eventDate))}</strong></span>
-          ${o.foodEta ? `<span>Mat ca <strong>${esc(o.foodEta)}</strong></span>` : ''}</div>
+        <div class="info"><span>${esc(o.placeName)}</span><span>${L('För', 'For')} <strong>${esc(dayWord(o.eventDate))}</strong></span>
+          ${o.foodEta ? `<span>${L('Mat ca', 'Food approx.')} <strong>${esc(o.foodEta)}</strong></span>` : ''}</div>
         <div class="box">
           <div><strong>#${o.orderNumber}</strong> ${esc(o.orderText)}</div>
           <div style="margin-top:8px">${esc(o.customerName)} · ${state}</div>
@@ -39,18 +39,19 @@
         ${msg ? `<p style="margin-top:16px;font-size:1.05rem">${msg}</p>` : ''}
         ${o.canChange ? `
           <div class="row" style="margin-top:16px">
-            <button class="go" data-a="yes" style="flex:1;padding:14px;font-size:1rem;${wanted === 'ja' && !o.confirmed ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.confirmed ? 'disabled' : ''}>✓ Jag vill ha maten</button>
-            <button class="danger" data-a="no" style="flex:1;padding:14px;font-size:1rem;${wanted === 'nej' && !o.cancelled ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.cancelled ? 'disabled' : ''}>✕ Avboka</button>
-          </div>`
-        : `<p class="muted" style="margin-top:16px">Beställningen är stängd – kontakta ${esc(o.creatorName)} om något ska ändras.</p>`}
-        ${!o.cancelled ? '' : `<p class="muted" style="margin-top:14px">Ångrat dig? Tryck på "Jag vill ha maten" så länge beställningen är öppen.</p>`}
-        ${o.cancelled && o.paid ? `<p class="muted">Du har redan swishat – ${esc(o.creatorName)} löser återbetalningen.</p>` : ''}`;
+            <button class="go" data-a="yes" style="flex:1;padding:14px;font-size:1rem;${wanted === 'ja' && !o.confirmed ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.confirmed ? 'disabled' : ''}>✓ ${L('Jag vill ha maten', 'I want the food')}</button>
+            <button class="danger" data-a="no" style="flex:1;padding:14px;font-size:1rem;${wanted === 'nej' && !o.cancelled ? 'box-shadow:0 0 0 3px var(--yellow)' : ''}" ${o.cancelled ? 'disabled' : ''}>✕ ${L('Avboka', 'Cancel')}</button>
+          </div>
+          <p style="margin-top:12px"><a href="${esc(o.editLink)}">${L('Ändra beställningen i stället', 'Change the order instead')} →</a></p>`
+        : `<p class="muted" style="margin-top:16px">${L(`Beställningen är stängd – kontakta ${esc(o.creatorName)} om något ska ändras.`, `Ordering is closed – contact ${esc(o.creatorName)} if something needs to change.`)}</p>`}
+        ${!o.cancelled ? '' : `<p class="muted" style="margin-top:14px">${L('Ångrat dig? Tryck på "Jag vill ha maten" så länge beställningen är öppen.', 'Changed your mind? Press "I want the food" while ordering is open.')}</p>`}
+        ${o.cancelled && o.paid ? `<p class="muted">${L(`Du har redan swishat – ${esc(o.creatorName)} löser återbetalningen.`, `You have already paid – ${esc(o.creatorName)} will sort out the refund.`)}</p>` : ''}`;
       appEl.querySelectorAll('[data-a]').forEach((b) => {
         b.onclick = async () => {
           b.disabled = true;
           try {
             const res = await api('/api/answer/' + encodeURIComponent(token), 'POST', { answer: b.dataset.a });
-            render(res, b.dataset.a === 'yes' ? 'Tack! Din beställning är bekräftad. 👍' : 'Din beställning är avbokad.');
+            render(res, b.dataset.a === 'yes' ? L('Tack! Din beställning är bekräftad. 👍', 'Thanks! Your order is confirmed. 👍') : L('Din beställning är avbokad.', 'Your order is cancelled.'));
           } catch (e) {
             alert(e.message);
             b.disabled = false;
@@ -61,7 +62,7 @@
 
     api('/api/answer/' + encodeURIComponent(token))
       .then((o) => render(o, ''))
-      .catch((e) => { appEl.innerHTML = `<h1>Hittades inte</h1><p class="muted">${esc(e.message)}</p>`; });
+      .catch((e) => { appEl.innerHTML = `<h1>${L('Hittades inte', 'Not found')}</h1><p class="muted">${esc(e.message)}</p>`; });
   </script>
 </body>
 </html>

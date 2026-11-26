@@ -5,47 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
   <meta name="referrer" content="no-referrer" />
-  <title>SamMat – Betala</title>
+  <title>SamMat – Swish</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
   <link rel="apple-touch-icon" href="/img/apple-touch-icon.png" />
   <meta name="theme-color" content="#1e272e" />
   <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
 </head>
 <body>
   <div class="wrap narrow">
     <div class="topbar"><a href="/" class="logo">SamMat</a></div>
-    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+    <div id="app" class="card"><p class="muted">…</p></div>
   </div>
   <script>
     const appEl = document.getElementById('app');
-    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     const token = location.pathname.split('/').pop();
 
-    (async () => {
-      const res = await fetch('/api/pay/' + encodeURIComponent(token));
-      const o = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        appEl.innerHTML = `<h1>Hittades inte</h1><p class="muted">${esc(o.error || 'Länken fungerar inte längre.')}</p>`;
-        return;
-      }
+    api('/api/pay/' + encodeURIComponent(token)).then((o) => {
+      document.title = `SamMat – ${L('Betala', 'Pay')}`;
       appEl.innerHTML = `
-        <h1>${o.paid ? 'Betalt – tack!' : 'Att betala'}</h1>
+        <h1>${o.paid ? L('Betalt – tack!', 'Paid – thanks!') : L('Att betala', 'To pay')}</h1>
         <p class="muted">${esc(o.customerName)} · ${esc(o.placeName)}</p>
         <div class="box">
           <div><strong>#${o.orderNumber}</strong> ${esc(o.orderText)}</div>
           <div class="amount">${o.amount} kr</div>
-          ${o.share || o.alreadyPaid ? `<div class="muted" style="font-size:.88rem">Mat ${o.food} kr${o.share ? ` + ${esc(o.sharedLabel || 'gemensam kostnad')} ${o.share} kr` : ''}${o.alreadyPaid ? ` − redan betalt ${o.alreadyPaid} kr` : ''}</div>` : ''}
-          ${o.food !== o.estimated ? `<div class="muted">Justerat efter kvittot – menypriset var ${o.estimated} kr.</div>` : ''}
-          <div class="muted" style="margin-top:4px">Till: ${esc(o.swishNumber)} · Meddelande: ”${esc(o.swishMessage)}”</div>
+          ${o.share || o.alreadyPaid ? `<div class="muted" style="font-size:.88rem">${L('Mat', 'Food')} ${o.food} kr${o.share ? ` + ${esc(o.sharedLabel || L('gemensam kostnad', 'shared cost'))} ${o.share} kr` : ''}${o.alreadyPaid ? ` − ${L('redan betalt', 'already paid')} ${o.alreadyPaid} kr` : ''}</div>` : ''}
+          ${o.food !== o.estimated ? `<div class="muted">${L(`Justerat efter kvittot – menypriset var ${o.estimated} kr.`, `Adjusted to the receipt – the menu price was ${o.estimated} kr.`)}</div>` : ''}
+          <div class="muted" style="margin-top:4px">${L('Till', 'To')}: ${esc(o.swishNumber)} · ${L('Meddelande', 'Message')}: ”${esc(o.swishMessage)}”</div>
         </div>
-        ${o.paid ? '<p class="muted">Admin har markerat den här beställningen som betald.</p>' : `
-          ${isMobile ? '' : `<div class="qr">${o.qrSvg}</div><p class="muted center">Skanna med Swish-appen</p>`}
-          <a class="swish" href="${esc(o.swishAppUrl)}">Öppna Swish</a>
-          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>Visa QR-kod</summary><div class="qr">${o.qrSvg}</div></details>` : ''}`}`;
-    })();
+        ${o.paid ? `<p class="muted">${L('Den här beställningen är markerad som betald.', 'This order is marked as paid.')}</p>` : `
+          ${isMobile ? '' : `<div class="qr">${o.qrSvg}</div><p class="muted center">${L('Skanna med Swish-appen', 'Scan with the Swish app')}</p>`}
+          <a class="swish" href="${esc(o.swishAppUrl)}">${L('Öppna Swish', 'Open Swish')}</a>
+          ${isMobile ? `<details class="muted" style="margin-top:12px"><summary>${L('Visa QR-kod', 'Show QR code')}</summary><div class="qr">${o.qrSvg}</div></details>` : ''}`}`;
+    }).catch((e) => {
+      appEl.innerHTML = `<h1>${L('Hittades inte', 'Not found')}</h1><p class="muted">${esc(e.message)}</p>`;
+    });
   </script>
 </body>
 </html>

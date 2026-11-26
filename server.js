@@ -19,7 +19,9 @@ const ADMIN_PIN = String(process.env.ADMIN_PIN || process.env.ADMIN_PASSWORD || 
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, ''); // set this in production (links in mails)
 const PURGE_DAYS = Number(process.env.PURGE_DAYS || 7); // rounds older than this are ended and deleted
 const MAX_ACTIVE_ROUNDS = Number(process.env.MAX_ACTIVE_ROUNDS || 30);
-const FAVORITE_DAYS = Number(process.env.FAVORITE_DAYS || 180); // "same as last time" is kept this long after the last order
+const FAVORITE_DAYS = Number(process.env.FAVORITE_DAYS || 180);
+const CREATE_PIN = String(process.env.CREATE_PIN || '').trim();          // optional: PIN needed to start a round
+const BACKUP_DAYS = Number(process.env.BACKUP_DAYS ?? 7);                 // daily backup kept this many days; 0 = off // "same as last time" is kept this long after the last order
 const SESSION_HOURS = 24;
 
 if (ADMIN_PIN.length < 4 || ADMIN_PIN === 'CHANGE_ME') {
@@ -167,6 +169,21 @@ const listLocations = () => db.prepare('SELECT id, name FROM locations ORDER BY 
 // v2.5: companies (e.g. an office hotel). A round is for one company, or none = everyone in the building.
 db.exec('CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
 addCols('rounds', [['company_id', 'INTEGER REFERENCES companies(id) ON DELETE SET NULL']]);
+// v2.6: drinks (own category, with quantity), add-ons per dish, editable orders
+addCols('menu_items', [['category', "TEXT NOT NULL DEFAULT 'main'"]]);   // 'main' | 'drink'
+addCols('place_options', [['applies_to', 'TEXT']]);                      // JSON array of menu item ids; NULL = all dishes
+addCols('orders', [
+  ['extras_text', "TEXT NOT NULL DEFAULT ''"],   // "2× Coca-Cola, 1× Loka"
+  ['extras', "TEXT NOT NULL DEFAULT '[]'"],      // JSON [{name, qty, price}]
+  ['selection', 'TEXT'],                          // JSON of what was picked (ids), to prefill the edit form
+  ['lang', "TEXT NOT NULL DEFAULT 'sv'"],
+  ['updated_at', 'TEXT']
+]);
+addCols('favorites', [['extras', "TEXT NOT NULL DEFAULT '[]'"]]);
+addCols('rounds', [['lang', "TEXT NOT NULL DEFAULT 'sv'"]]); // language of the creator (their mails)
+// v2.6: contact info per place (shown to everyone in a round: phone, address, menu link, note)
+addCols('places', [['phone', "TEXT NOT NULL DEFAULT ''"], ['address', "TEXT NOT NULL DEFAULT ''"], ['url', "TEXT NOT NULL DEFAULT ''"], ['note', "TEXT NOT NULL DEFAULT ''"]]);
+
 const listCompanies = () => db.prepare('SELECT id, name FROM companies ORDER BY name COLLATE NOCASE').all();
 const companyIdOr = (v) => { const id = v ? toInt(v) : null; return id && db.prepare('SELECT 1 FROM companies WHERE id = ?').get(id) ? id : null; };
 
@@ -175,6 +192,10 @@ const setSetting = (k, v) => db.prepare('INSERT INTO settings (key, value) VALUE
 if (!getSetting('hash_salt')) setSetting('hash_salt', crypto.randomBytes(32).toString('hex'));
 const emailHash = (email) => crypto.createHmac('sha256', getSetting('hash_salt')).update(String(email).trim().toLowerCase()).digest('hex');
 db.exec("UPDATE rounds SET event_date = substr(created_at, 1, 10) WHERE event_date IS NULL");
+
+// ---------- Language (sv default, en) ----------
+const langOf = (req) => (String(req.get('x-lang') || '').toLowerCase() === 'en' ? 'en' : 'sv');
+const T = (req, sv, en) => (langOf(req) === 'en' ? en : sv);
 
 // ---------- Helpers ----------
 const clean = (v, max = 80) => String(v ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
@@ -202,7 +223,22 @@ function money(o, shares) {
   const paid = o.paid_amount || 0;
   return { food, share, owed, paid, outstanding: Math.max(0, owed - paid), isPaid: owed > 0 && paid >= owed };
 }
+// For the restaurant: dish, add-ons, removals. Drinks are listed separately at the bottom of the order list.
 const orderText = (o) => [o.item_name, o.addons_text, o.removals_text].filter(Boolean).join(' - ');
+// For the person: everything, drinks included
+const orderTextFull = (o) => orderText(o) + (o.extras_text ? ` + ${o.extras_text}` : '');
+// "3× Coca-Cola (#1, #4×2)" – drinks summed over orders
+function drinkLines(orders) {
+  const m = new Map();
+  for (const o of orders) {
+    for (const x of JSON.parse(o.extras || '[]')) {
+      const g = m.get(x.name) || { n: 0, who: [] };
+      g.n += x.qty; g.who.push(`#${o.nr}${x.qty > 1 ? '×' + x.qty : ''}`);
+      m.set(x.name, g);
+    }
+  }
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'sv')).map(([name, g]) => `${g.n}× ${name} (${g.who.join(', ')})`);
+}
 const orderLine = (o) => `#${o.nr} (${o.customer_name}) ${orderText(o)}`;
 const swishDigits = (n) => String(n).replace(/\D/g, '');
 const cleanSwish = (v) => clean(v, 20).replace(/[^\d+ ]/g, '').trim();
@@ -218,8 +254,11 @@ const MAX_DAYS_AHEAD = 60;
 const TZ = 'Europe/Stockholm';
 const todayStr = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ }); // YYYY-MM-DD
 const addDays = (ymd, n) => { const d = new Date(ymd + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const dateSv = (ymd) => new Date(ymd + 'T12:00:00Z').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
-const dayTimeSv = (iso) => new Date(iso).toLocaleString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ });
+const locOf = (lang) => (lang === 'en' ? 'en-GB' : 'sv-SE');
+const dateL = (ymd, lang = 'sv') => new Date(ymd + 'T12:00:00Z').toLocaleDateString(locOf(lang), { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+const dayTimeL = (iso, lang = 'sv') => new Date(iso).toLocaleString(locOf(lang), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ });
+const dateSv = (ymd) => dateL(ymd, 'sv');
+const dayTimeSv = (iso) => dayTimeL(iso, 'sv');
 
 // A future point in time (ISO from the browser), at most MAX_DAYS_AHEAD (+1) away
 function parseFuture(v, label) {
@@ -257,7 +296,8 @@ function swishFor(order, round, amount) {
   };
 }
 
-const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name, co.name AS company_name
+const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name, co.name AS company_name,
+  p.phone AS place_phone, p.address AS place_address, p.url AS place_url, p.note AS place_note
   FROM rounds r JOIN places p ON p.id = r.place_id LEFT JOIN locations l ON l.id = p.location_id
   LEFT JOIN companies co ON co.id = r.company_id`;
 const getRoundBySlug = (slug) => db.prepare(`${ROUND_SELECT} WHERE r.slug = ?`).get(clean(slug, 12).toLowerCase());
@@ -266,13 +306,17 @@ const ordersOf = (roundId) => db.prepare('SELECT * FROM orders WHERE round_id = 
 const allOrdersOf = (roundId) => db.prepare('SELECT * FROM orders WHERE round_id = ? ORDER BY nr').all(roundId);
 
 function menuFor(placeId) {
-  const options = db.prepare('SELECT id, kind, name, price FROM place_options WHERE place_id = ? ORDER BY id').all(placeId);
+  const options = db.prepare('SELECT id, kind, name, price, applies_to FROM place_options WHERE place_id = ? ORDER BY id').all(placeId)
+    .map((o) => ({ id: o.id, kind: o.kind, name: o.name, price: o.price, appliesTo: o.applies_to ? JSON.parse(o.applies_to) : null }));
+  const items = db.prepare('SELECT id, name, price, category FROM menu_items WHERE place_id = ? ORDER BY name COLLATE NOCASE').all(placeId);
   return {
-    menu: db.prepare('SELECT id, name, price FROM menu_items WHERE place_id = ? ORDER BY name COLLATE NOCASE').all(placeId),
+    menu: items.filter((m) => m.category !== 'drink').map(({ id, name, price }) => ({ id, name, price })),
+    drinks: items.filter((m) => m.category === 'drink').map(({ id, name, price }) => ({ id, name, price })),
     addons: options.filter((o) => o.kind === 'addon'),
     removals: options.filter((o) => o.kind === 'removal')
   };
 }
+const optionFits = (o, itemId) => !o.appliesTo || o.appliesTo.includes(itemId);
 
 // Public view of a round (no PIN, no Swish number)
 function publicRound(r) {
@@ -284,6 +328,7 @@ function publicRound(r) {
     locationId: r.location_id ?? null,
     locationName: r.location_name || '',
     companyId: r.company_id ?? null,
+    place: { phone: r.place_phone || '', address: r.place_address || '', url: r.place_url || '', note: r.place_note || '' },
     companyName: r.company_name || '',
     creatorName: r.creator_name,
     eventDate: r.event_date,
@@ -333,6 +378,75 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 'loopback'); // Caddy on the host
 app.use(express.json({ limit: '20kb' }));
+
+// Error messages are written in Swedish; English clients (X-Lang: en) get them translated here
+const ERR_EN = {
+  'Sambeställningen finns inte (längre).': 'This group order no longer exists.',
+  'Det namnet finns redan.': 'That name already exists.',
+  'Ogiltig e-postadress.': 'Invalid e-mail address.',
+  'Namn och pris krävs.': 'Name and price are required.',
+  'Beställningen hittades inte. Rundan kan vara avslutad.': 'Order not found. The round may have ended.',
+  'Ange ställets namn.': "Enter the place's name.",
+  'Ange ortens namn.': "Enter the location's name.",
+  'Ange företagets namn.': "Enter the company's name.",
+  'Välj ett ställe.': 'Choose a place.',
+  'Stället finns redan.': 'The place already exists.',
+  'Stället används i en aktiv runda.': 'The place is used in an active round.',
+  'Orten finns redan.': 'The location already exists.',
+  'Orten finns inte.': 'The location does not exist.',
+  'Okänt svar.': 'Unknown answer.',
+  'Okänd adress.': 'Unknown address.',
+  'Ogiltigt pris.': 'Invalid price.',
+  'Ogiltigt datum.': 'Invalid date.',
+  'Mejl är inte konfigurerat.': 'Mail is not configured.',
+  'Mejl är inte konfigurerat – påminnelser går inte att skicka.': 'Mail is not configured – reminders cannot be sent.',
+  'Mejl är inte konfigurerat på servern.': 'Mail is not configured on the server.',
+  'Logga in med admin-PIN.': 'Log in with the admin PIN.',
+  'Ingen e-post angiven för rundan. Lägg till den under Inställningar.': 'No e-mail set for the round. Add it under Settings.',
+  'Företaget finns redan.': 'The company already exists.',
+  'För många felaktiga försök. Vänta 15 minuter.': 'Too many wrong attempts. Wait 15 minutes.',
+  'För många aktiva rundor just nu.': 'Too many active rounds right now.',
+  'Finns inte.': 'Not found.',
+  'Fel PIN-kod.': 'Wrong PIN code.',
+  'Ett utskick pågår redan.': 'A mail-out is already running.',
+  'Du har startat många rundor den senaste timmen. Vänta lite.': 'You have started many rounds in the last hour. Please wait a bit.',
+  'Datumet har redan passerat.': 'The date has already passed.',
+  'Betalningen hittades inte. Rundan kan vara avslutad.': 'Payment not found. The round may have ended.',
+  'Beställningen finns inte.': 'The order does not exist.',
+  'Ange rundans PIN-kod.': "Enter the round's PIN code.",
+  'Ange namn.': 'Enter a name.',
+  'Ange ett giltigt Swish-nummer.': 'Enter a valid Swish number.',
+  'Ange en giltig e-postadress.': 'Enter a valid e-mail address.',
+  'Ange en giltig adress.': 'Enter a valid address.',
+  'Ange e-post för att få orderlistan mejlad.': 'Enter an e-mail to get the order list.',
+  'Ange ditt namn.': 'Enter your name.',
+  'Ange ditt Swish-nummer.': 'Enter your Swish number.',
+  'Ange din e-post för att få orderlistan mejlad.': 'Enter your e-mail to get the order list.',
+  'Stopptid har redan passerat.': 'The closing time has already passed.',
+  'Stopptid ligger för långt fram.': 'The closing time is too far ahead.',
+  'Ogiltig stopptid.': 'Invalid closing time.',
+  'Påminnelsetid har redan passerat.': 'The reminder time has already passed.',
+  'Påminnelsetid ligger för långt fram.': 'The reminder time is too far ahead.',
+  'Ogiltig påminnelsetid.': 'Invalid reminder time.',
+  'Beställningen är stängd.': 'Ordering is closed.'
+};
+function errorToEn(msg) {
+  if (ERR_EN[msg]) return ERR_EN[msg];
+  let m;
+  if ((m = msg.match(/^Max (\d+) dagar fram\.$/))) return `At most ${m[1]} days ahead.`;
+  if ((m = msg.match(/^Beställningen är redan stängd – kontakta (.+)\.$/))) return `Ordering is already closed – contact ${m[1]}.`;
+  if ((m = msg.match(/^Ogiltig adress \(måste börja med http:\/\/ eller https:\/\/\): (.*)$/))) return `Invalid address (must start with http:// or https://): ${m[1]}`;
+  if ((m = msg.match(/^Kunde inte skicka: (.*)$/))) return `Could not send: ${m[1]}`;
+  if ((m = msg.match(/^Misslyckades: (.*)$/))) return `Failed: ${m[1]}`;
+  return msg;
+}
+app.use((req, res, next) => {
+  if (langOf(req) === 'en') {
+    const json = res.json.bind(res);
+    res.json = (b) => json(b && typeof b.error === 'string' ? { ...b, error: errorToEn(b.error) } : b);
+  }
+  next();
+});
 
 // ---------- Auth: one cookie, server-side scopes ('admin' and/or 'round:<id>') ----------
 const sessions = new Map(); // token -> { exp, scopes:Set }
@@ -438,6 +552,7 @@ app.get('/admin', page('admin.html'));
 app.get('/ny', page('new.html'));
 app.get('/r/:slug', page('round.html'));
 app.get('/r/:slug/admin', page('manage.html'));
+app.get('/r/:slug/andra/:token', page('round.html'));
 app.get('/pay/:token', page('pay.html'));
 app.get('/svar/:token', page('svar.html'));
 app.get('/integritet', page('integritet.html'));
@@ -447,7 +562,7 @@ app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }))
 // ---------- Public API ----------
 app.get('/api/places', (req, res) => {
   res.json(db.prepare(`
-    SELECT p.id, p.name, p.location_id AS locationId, l.name AS locationName,
+    SELECT p.id, p.name, p.location_id AS locationId, l.name AS locationName, p.phone, p.address, p.url, p.note,
            (SELECT COUNT(*) FROM menu_items m WHERE m.place_id = p.id) AS items
     FROM places p LEFT JOIN locations l ON l.id = p.location_id ORDER BY p.name COLLATE NOCASE
   `).all().filter((p) => p.items > 0));
@@ -467,6 +582,14 @@ app.post('/api/rounds', async (req, res) => {
     return res.status(429).json({ error: 'För många aktiva rundor just nu.' });
   }
 
+  // Optional install-wide PIN for starting rounds (CREATE_PIN), with the same lockout as other PINs
+  if (CREATE_PIN) {
+    if (locked(ipFails, req.ip)) return res.status(429).json({ error: T(req, 'För många felaktiga försök. Vänta 15 minuter.', 'Too many wrong attempts. Wait 15 minutes.') });
+    if (!safeEqual(clean(req.body.createPin, 20), CREATE_PIN)) {
+      fail(ipFails, req.ip, 10);
+      return res.status(401).json({ error: T(req, 'Fel PIN för att starta en runda.', 'Wrong PIN for starting a round.'), needPin: true });
+    }
+  }
   const placeId = toInt(req.body.placeId);
   const place = db.prepare('SELECT id FROM places WHERE id = ?').get(placeId);
   const name = clean(req.body.name, 50);
@@ -500,10 +623,10 @@ app.post('/api/rounds', async (req, res) => {
   const pin = newPin();
   const info = db.prepare(`
     INSERT INTO rounds (slug, pin, name, place_id, swish_number, creator_name, creator_email, food_eta, close_at, mail_orders,
-                        event_date, reminder_at, confirm, pay_mode, shared_cost, shared_label, pay_remind_hours, company_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_date, reminder_at, confirm, pay_mode, shared_cost, shared_label, pay_remind_hours, company_id, lang, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(slug, pin, name, placeId, swishNumber, creatorName, creatorEmail, foodEta, close.value, mailOrders ? 1 : 0,
-    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, sharedCost, sharedLabel, payRemindHours, companyId, new Date().toISOString());
+    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, sharedCost, sharedLabel, payRemindHours, companyId, langOf(req), new Date().toISOString());
   recent.push(now);
   createLog.set(req.ip, recent);
 
@@ -525,71 +648,148 @@ app.get('/api/rounds/:slug', (req, res) => {
   res.json({ ...publicRound(r), ...menuFor(r.place_id), board, canManage: canManage(req, r) });
 });
 
-app.post('/api/rounds/:slug/orders', (req, res) => {
-  const r = getRoundBySlug(req.params.slug);
-  if (!r) return res.status(404).json({ error: 'Sambeställningen finns inte (längre).' });
-  if (!r.is_open) return res.status(400).json({ error: 'Beställningen är stängd.' });
+// Per-IP limit on new orders (spam protection): ORDER_LIMIT per 10 minutes, default 20
+const ORDER_LIMIT = Number(process.env.ORDER_LIMIT || 20);
+const orderLog = new Map();
+function orderRateOk(req) {
+  const now = Date.now();
+  const list = (orderLog.get(req.ip) || []).filter((t) => t > now - 600000);
+  if (list.length >= ORDER_LIMIT) return false;
+  list.push(now);
+  orderLog.set(req.ip, list);
+  return true;
+}
 
-  const { menu, addons: allAddons, removals: allRemovals } = menuFor(r.place_id);
-  const customerName = clean(req.body.customerName, 40);
-  const email = clean(req.body.email, 120).toLowerCase();
-  const menuItemId = toInt(req.body.menuItemId);
-  const addonIds = Array.isArray(req.body.addonIds) ? req.body.addonIds.map(toInt) : [];
-  const removalIds = Array.isArray(req.body.removalIds) ? req.body.removalIds.map(toInt) : [];
-  const customRemoval = clean(req.body.customRemoval, 120);
-
-  if (!customerName) return res.status(400).json({ error: 'Ange ditt namn.' });
-  if (!isEmail(email)) return res.status(400).json({ error: 'Ange en giltig e-postadress.' });
+// Validates an order body against the round's menu. Returns { error } or the order fields.
+function buildOrder(req, r) {
+  const { menu, drinks, addons: allAddons, removals: allRemovals } = menuFor(r.place_id);
+  const b = req.body;
+  const customerName = clean(b.customerName, 40);
+  const email = clean(b.email, 120).toLowerCase();
+  const menuItemId = toInt(b.menuItemId);
+  const addonIds = Array.isArray(b.addonIds) ? b.addonIds.map(toInt) : [];
+  const removalIds = Array.isArray(b.removalIds) ? b.removalIds.map(toInt) : [];
+  const customRemoval = clean(b.customRemoval, 120);
+  if (!customerName) return { error: T(req, 'Ange ditt namn.', 'Enter your name.') };
+  if (!isEmail(email)) return { error: T(req, 'Ange en giltig e-postadress.', 'Enter a valid e-mail address.') };
   const item = menu.find((m) => m.id === menuItemId);
-  if (!item) return res.status(400).json({ error: 'Välj en produkt.' });
+  if (!item) return { error: T(req, 'Välj en rätt.', 'Choose a dish.') };
 
-  const addons = allAddons.filter((a) => addonIds.includes(a.id));
-  const removals = allRemovals.filter((x) => removalIds.includes(x.id));
-  const totalPrice = item.price + addons.reduce((s, a) => s + a.price, 0);
-  const addonsText = addons.map((a) => a.name).join(', ');
-  const removalsText = [...removals.map((x) => x.name), ...(customRemoval ? [customRemoval] : [])].join(', ');
+  const addons = allAddons.filter((a) => addonIds.includes(a.id) && optionFits(a, item.id));
+  const removals = allRemovals.filter((x) => removalIds.includes(x.id) && optionFits(x, item.id));
+  // Drinks: [{ id, qty }], 1–10 each
+  const extras = [];
+  for (const e of Array.isArray(b.extras) ? b.extras : []) {
+    const d = drinks.find((x) => x.id === toInt(e.id));
+    const qty = Math.max(0, Math.min(10, toInt(e.qty) || 0));
+    if (d && qty) extras.push({ id: d.id, name: d.name, qty, price: d.price });
+  }
+  const totalPrice = item.price + addons.reduce((s2, a) => s2 + a.price, 0) + extras.reduce((s2, x) => s2 + x.price * x.qty, 0);
+  return {
+    customerName, email, item, addons, removals, customRemoval, extras, totalPrice,
+    addonsText: addons.map((a) => a.name).join(', '),
+    removalsText: [...removals.map((x) => x.name), ...(customRemoval ? [customRemoval] : [])].join(', '),
+    extrasText: extras.map((x) => `${x.qty}× ${x.name}`).join(', '),
+    extrasJson: JSON.stringify(extras.map(({ name, qty, price }) => ({ name, qty, price }))),
+    selection: JSON.stringify({ menuItemId: item.id, addonIds: addons.map((a) => a.id), removalIds: removals.map((x) => x.id),
+      extras: extras.map(({ id, qty }) => ({ id, qty })), customRemoval })
+  };
+}
 
-  // Number per round, never reused (a deleted #3 stays a gap)
-  const payToken = newToken();
-  db.transaction(() => {
-    const { next_nr: nr } = db.prepare('SELECT next_nr FROM rounds WHERE id = ?').get(r.id);
-    db.prepare('UPDATE rounds SET next_nr = next_nr + 1 WHERE id = ?').run(r.id);
+// "Same as last time": opt-in, keyed on e-mail (hashed) + place, needs the name too when read back
+function saveFavorite(r, o, remember) {
+  const ek = emailHash(o.email);
+  if (remember) {
     db.prepare(`
-      INSERT INTO orders (round_id, nr, customer_name, email, item_name, base_price, addons_text, removals_text, total_price, pay_token,
-                          confirmed_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(r.id, nr, customerName, email, item.name, item.price, addonsText, removalsText, totalPrice, payToken,
-      r.reminder_sent_at ? new Date().toISOString() : null, new Date().toISOString());
-  })();
-
-  // "Same as last time": opt-in, keyed on e-mail (hashed) + place, needs the name too when read back
-  const ek = emailHash(email);
-  if (req.body.remember) {
-    db.prepare(`
-      INSERT INTO favorites (email_hash, place_id, name_lc, item_name, addons, removals, custom, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO favorites (email_hash, place_id, name_lc, item_name, addons, removals, custom, extras, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(email_hash, place_id) DO UPDATE SET name_lc = excluded.name_lc, item_name = excluded.item_name,
-        addons = excluded.addons, removals = excluded.removals, custom = excluded.custom, updated_at = excluded.updated_at
-    `).run(ek, r.place_id, customerName.toLowerCase(), item.name, JSON.stringify(addons.map((a) => a.name)),
-      JSON.stringify(removals.map((x) => x.name)), customRemoval, new Date().toISOString());
+        addons = excluded.addons, removals = excluded.removals, custom = excluded.custom, extras = excluded.extras, updated_at = excluded.updated_at
+    `).run(ek, r.place_id, o.customerName.toLowerCase(), o.item.name, JSON.stringify(o.addons.map((a) => a.name)),
+      JSON.stringify(o.removals.map((x) => x.name)), o.customRemoval, JSON.stringify(o.extras.map(({ name, qty }) => ({ name, qty }))), new Date().toISOString());
   } else {
     db.prepare('DELETE FROM favorites WHERE email_hash = ? AND place_id = ?').run(ek, r.place_id);
   }
+}
+
+app.post('/api/rounds/:slug/orders', (req, res) => {
+  const r = getRoundBySlug(req.params.slug);
+  if (!r) return res.status(404).json({ error: T(req, 'Sambeställningen finns inte (längre).', 'This group order no longer exists.') });
+  if (!r.is_open) return res.status(400).json({ error: T(req, 'Beställningen är stängd.', 'Ordering is closed.') });
+  if (!orderRateOk(req)) return res.status(429).json({ error: T(req, 'För många beställningar på kort tid. Vänta en stund.', 'Too many orders in a short time. Please wait a moment.') });
+  const o = buildOrder(req, r);
+  if (o.error) return res.status(400).json({ error: o.error });
+
+  // Number per round, never reused (a deleted #3 stays a gap)
+  const payToken = newToken();
+  let nr;
+  db.transaction(() => {
+    nr = db.prepare('SELECT next_nr FROM rounds WHERE id = ?').get(r.id).next_nr;
+    db.prepare('UPDATE rounds SET next_nr = next_nr + 1 WHERE id = ?').run(r.id);
+    db.prepare(`
+      INSERT INTO orders (round_id, nr, customer_name, email, item_name, base_price, addons_text, removals_text, extras_text, extras,
+                          selection, lang, total_price, pay_token, confirmed_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(r.id, nr, o.customerName, o.email, o.item.name, o.item.price, o.addonsText, o.removalsText, o.extrasText, o.extrasJson,
+      o.selection, langOf(req), o.totalPrice, payToken, r.reminder_sent_at ? new Date().toISOString() : null, new Date().toISOString());
+  })();
+  saveFavorite(r, o, req.body.remember);
 
   // Pay before: the order page shows Swish right away, and the same payment info is mailed
   if (r.pay_mode === 'before' && mailConfigured) {
-    const o = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(payToken);
-    payMail(o, r, '')
-      .then((m) => sendMail({ to: o.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments }))
-      .then(() => db.prepare('UPDATE orders SET pay_mail_at = ? WHERE id = ?').run(new Date().toISOString(), o.id))
-      .catch((e) => console.error(`Betalmejl #${o.nr}:`, e.message));
+    const row = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(payToken);
+    payMail(row, r, '')
+      .then((m) => sendMail({ to: row.email, subject: m.subject, text: m.text, html: m.html, attachments: m.attachments }))
+      .then(() => db.prepare('UPDATE orders SET pay_mail_at = ? WHERE id = ?').run(new Date().toISOString(), row.id))
+      .catch((e) => console.error(`Betalmejl #${row.nr}:`, e.message));
   }
 
   res.status(201).json({
+    nr, editToken: payToken, closeAt: r.close_at,
     payMode: r.pay_mode, payToken: r.pay_mode === 'before' ? payToken : undefined, mailConfigured,
-    customerName, email, title: roundTitle(r), foodEta: r.food_eta, eventDate: r.event_date, isToday: r.event_date === todayStr(),
-    reminderAt: r.reminder_sent_at ? null : r.reminder_at, confirm: Boolean(r.confirm), itemName: item.name, addonsText, removalsText, totalPrice
+    customerName: o.customerName, email: o.email, title: roundTitle(r), foodEta: r.food_eta, eventDate: r.event_date,
+    isToday: r.event_date === todayStr(), reminderAt: r.reminder_sent_at ? null : r.reminder_at, confirm: Boolean(r.confirm),
+    itemName: o.item.name, addonsText: o.addonsText, removalsText: o.removalsText, extrasText: o.extrasText, totalPrice: o.totalPrice
   });
+});
+
+// ---------- Edit / cancel own order (link shown after ordering; works while the round is open) ----------
+const orderByToken = (t) => db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(clean(t, 64));
+function ownOrderView(o, r) {
+  return {
+    nr: o.nr, cancelled: Boolean(o.cancelled_at), canEdit: Boolean(r.is_open), closeAt: r.close_at, slug: r.slug,
+    customerName: o.customer_name, email: o.email, text: orderTextFull(o), totalPrice: o.total_price,
+    selection: o.selection ? JSON.parse(o.selection) : null, creatorName: r.creator_name
+  };
+}
+app.get('/api/order/:token', (req, res) => {
+  const o = orderByToken(req.params.token);
+  const r = o && getRoundById(o.round_id);
+  if (!o || !r) return res.status(404).json({ error: T(req, 'Beställningen hittades inte. Rundan kan vara avslutad.', 'Order not found. The round may have ended.') });
+  res.json(ownOrderView(o, r));
+});
+app.put('/api/order/:token', (req, res) => {
+  const old = orderByToken(req.params.token);
+  const r = old && getRoundById(old.round_id);
+  if (!old || !r) return res.status(404).json({ error: T(req, 'Beställningen hittades inte.', 'Order not found.') });
+  if (!r.is_open) return res.status(400).json({ error: T(req, `Beställningen är stängd – kontakta ${r.creator_name}.`, `Ordering is closed – contact ${r.creator_name}.`) });
+  const o = buildOrder(req, r);
+  if (o.error) return res.status(400).json({ error: o.error });
+  db.prepare(`
+    UPDATE orders SET customer_name = ?, email = ?, item_name = ?, base_price = ?, addons_text = ?, removals_text = ?, extras_text = ?,
+      extras = ?, selection = ?, total_price = ?, final_price = NULL, cancelled_at = NULL, lang = ?, updated_at = ? WHERE id = ?
+  `).run(o.customerName, o.email, o.item.name, o.item.price, o.addonsText, o.removalsText, o.extrasText, o.extrasJson, o.selection,
+    o.totalPrice, langOf(req), new Date().toISOString(), old.id);
+  saveFavorite(r, o, req.body.remember);
+  res.json(ownOrderView(orderByToken(req.params.token), r));
+});
+app.post('/api/order/:token/cancel', (req, res) => {
+  const o = orderByToken(req.params.token);
+  const r = o && getRoundById(o.round_id);
+  if (!o || !r) return res.status(404).json({ error: T(req, 'Beställningen hittades inte.', 'Order not found.') });
+  if (!r.is_open) return res.status(400).json({ error: T(req, `Beställningen är stängd – kontakta ${r.creator_name}.`, `Ordering is closed – contact ${r.creator_name}.`) });
+  db.prepare('UPDATE orders SET cancelled_at = ?, confirmed_at = NULL WHERE id = ?').run(new Date().toISOString(), o.id);
+  res.json(ownOrderView(orderByToken(req.params.token), r));
 });
 
 // "Same as last time" – needs e-mail AND name, mapped onto the place's current menu
@@ -601,14 +801,17 @@ app.post('/api/rounds/:slug/last', (req, res) => {
   if (!isEmail(email) || !name) return res.json({ found: false });
   const f = db.prepare('SELECT * FROM favorites WHERE email_hash = ? AND place_id = ? AND name_lc = ?').get(emailHash(email), r.place_id, name);
   if (!f) return res.json({ found: false });
-  const { menu, addons, removals } = menuFor(r.place_id);
+  const { menu, drinks, addons, removals } = menuFor(r.place_id);
   const item = menu.find((m) => m.name === f.item_name);
   if (!item) return res.json({ found: false });
-  const pick = (list, names) => list.filter((x) => JSON.parse(names).includes(x.name)).map((x) => x.id);
+  const pick = (list, names) => list.filter((x) => JSON.parse(names).includes(x.name) && optionFits(x, item.id)).map((x) => x.id);
+  const favExtras = JSON.parse(f.extras || '[]').map((e) => ({ d: drinks.find((x) => x.name === e.name), qty: e.qty })).filter((e) => e.d);
   res.json({
     found: true, itemName: f.item_name, menuItemId: item.id,
     addonIds: pick(addons, f.addons), removalIds: pick(removals, f.removals), custom: f.custom, updatedAt: f.updated_at,
-    label: [f.item_name, JSON.parse(f.addons).join(', '), [...JSON.parse(f.removals), ...(f.custom ? [f.custom] : [])].join(', ')].filter(Boolean).join(' - ')
+    extras: favExtras.map((e) => ({ id: e.d.id, qty: e.qty })),
+    label: [f.item_name, JSON.parse(f.addons).join(', '), [...JSON.parse(f.removals), ...(f.custom ? [f.custom] : [])].join(', ')].filter(Boolean).join(' - ') +
+      (favExtras.length ? ` + ${favExtras.map((e) => `${e.qty}× ${e.d.name}`).join(', ')}` : '')
   });
 });
 
@@ -621,7 +824,7 @@ app.post('/api/forget', (req, res) => {
   res.json({ ok: true, removed: info.changes });
 });
 
-app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, mailConfigured }));
+app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN) }));
 
 // Payment page data (link from the payment mail)
 app.get('/api/pay/:token', async (req, res) => {
@@ -634,7 +837,7 @@ app.get('/api/pay/:token', async (req, res) => {
   try { qrSvg = await QRCode.toString(sw.qrText, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }); } catch { /* ignore */ }
   res.json({
     orderNumber: o.nr, customerName: o.customer_name, placeName: r.place_name, title: roundTitle(r),
-    orderText: orderText(o), amount: sw.amount, estimated: o.total_price, paid: mo.isPaid || o.cancelled_at != null,
+    orderText: orderTextFull(o), amount: sw.amount, estimated: o.total_price, paid: mo.isPaid || o.cancelled_at != null,
     food: mo.food, share: mo.share, sharedLabel: r.shared_label, alreadyPaid: mo.paid, owed: mo.owed,
     swishNumber: r.swish_number, swishMessage: sw.message, swishAppUrl: sw.appUrl, qrSvg
   });
@@ -645,7 +848,7 @@ app.get('/api/pay/:token', async (req, res) => {
 function answerView(o, r) {
   return {
     orderNumber: o.nr, customerName: o.customer_name, title: roundTitle(r), placeName: r.place_name,
-    eventDate: r.event_date, foodEta: r.food_eta, orderText: orderText(o),
+    eventDate: r.event_date, foodEta: r.food_eta, orderText: orderTextFull(o), editLink: `/r/${r.slug}/andra/${o.pay_token}`,
     confirmed: Boolean(o.confirmed_at), cancelled: Boolean(o.cancelled_at), canChange: Boolean(r.is_open),
     creatorName: r.creator_name, roundLink: `/r/${r.slug}`, payMode: r.pay_mode, paid: (o.paid_amount || 0) > 0
   };
@@ -684,7 +887,8 @@ app.get('/api/rounds/:slug/manage', requireRound, (req, res) => {
     round: manageRound(req.round),
     orders: (() => { const sh = sharesFor(req.round.id); return allOrdersOf(req.round.id).map((o) => ({ ...money(o, sh),
       order_number: o.nr, customer_name: o.customer_name, email: o.email, item_name: o.item_name,
-      addons_text: o.addons_text, removals_text: o.removals_text, total_price: o.total_price,
+      addons_text: o.addons_text, removals_text: o.removals_text, extras_text: o.extras_text, extras: JSON.parse(o.extras || '[]'),
+      updated_at: o.updated_at, total_price: o.total_price,
       final_price: o.final_price, paid_amount: o.paid_amount, food_mail_at: o.food_mail_at, pay_mail_at: o.pay_mail_at, created_at: o.created_at,
       confirmed_at: o.confirmed_at, cancelled_at: o.cancelled_at, reminder_mail_at: o.reminder_mail_at, pay_remind_at: o.pay_remind_at
     })); })()
@@ -785,12 +989,13 @@ app.delete('/api/rounds/:slug/orders/:nr', requireRound, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- Mail templates: plain white, logo image, just the facts ----------
+// ---------- Mail templates: plain white, logo image, just the facts. Swedish or English per recipient. ----------
 const FONT = "'Nunito Sans',Helvetica,Arial,sans-serif";
 const SLAB = "Bitter,Rockwell,Georgia,'Times New Roman',serif";
+const M = (lang, sv, en) => (lang === 'en' ? en : sv);
 
-function mailLayout(bodyHtml) {
-  return `<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="color-scheme" content="light"></head>
+function mailLayout(bodyHtml, lang = 'sv') {
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="color-scheme" content="light"></head>
 <body style="margin:0;padding:0;background:#ffffff;color:#1e272e;font-family:${FONT};font-size:15px;line-height:1.5">
   <div style="max-width:480px;margin:0 auto;padding:28px 20px">
     <div style="margin-bottom:20px"><img src="cid:sammatlogo" width="122" height="36" alt="SamMat"
@@ -804,34 +1009,38 @@ function mailLayout(bodyHtml) {
 }
 
 const box = (inner) => `<div style="margin:14px 0;padding:10px 14px;border-left:3px solid #f53b57;background:#f7f8f9">${inner}</div>`;
-const orderBox = (o) => box(`<strong>#${o.nr}</strong> ${escHtml(orderText(o))}`);
+const orderBox = (o) => box(`<strong>#${o.nr}</strong> ${escHtml(orderTextFull(o))}`);
 const extraHtml = (extra) => (extra ? `<p style="margin:14px 0">${escHtml(extra).replace(/\n/g, '<br>')}</p>` : '');
 const link = (href, text) => `<a href="${escHtml(href)}" style="color:#f53b57;font-weight:700">${escHtml(text)}</a>`;
+const btn = (href, text, bg) => `<a href="${escHtml(href)}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:700;margin:0 8px 8px 0">${escHtml(text)}</a>`;
+const editLink = (o, r) => `${PUBLIC_URL}/r/${r.slug}/andra/${o.pay_token}`;
 
 function createdMail(r) {
+  const L = r.lang || 'sv';
   const m = manageRound(r);
-  const subject = `Din sambeställning: ${roundTitle(r)} (PIN ${r.pin})`;
+  const subject = M(L, `Din sambeställning: ${roundTitle(r)} (PIN ${r.pin})`, `Your group order: ${roundTitle(r)} (PIN ${r.pin})`);
   const text = [
-    `Hej ${r.creator_name}!`, '',
-    `Din sambeställning "${roundTitle(r)}" (${r.place_name}) är igång.`, '',
-    `Dela länken: ${m.link}`,
-    `Hantera: ${m.manageLink}`,
-    `PIN-kod: ${r.pin}`,
-    ...(r.event_date !== todayStr() ? ['', `Datum: ${dateSv(r.event_date)}`] : []),
-    ...(r.close_at ? ['', `Beställningen stängs automatiskt ${dayTimeSv(r.close_at)}.`] : []),
-    ...(r.reminder_at ? [`Påminnelse${r.confirm ? ' (med bekräfta/avboka)' : ''} skickas ${dayTimeSv(r.reminder_at)}.`] : []),
-    ...(r.mail_orders ? ['Du får orderlistan mejlad när den stängs.'] : [])
+    M(L, `Hej ${r.creator_name}!`, `Hi ${r.creator_name}!`), '',
+    M(L, `Din sambeställning "${roundTitle(r)}" (${r.place_name}) är igång.`, `Your group order "${roundTitle(r)}" (${r.place_name}) is up.`), '',
+    M(L, `Dela länken: ${m.link}`, `Share the link: ${m.link}`),
+    M(L, `Hantera: ${m.manageLink}`, `Manage: ${m.manageLink}`),
+    `PIN: ${r.pin}`,
+    ...(r.event_date !== todayStr() ? ['', `${M(L, 'Datum', 'Date')}: ${dateL(r.event_date, L)}`] : []),
+    ...(r.close_at ? ['', M(L, `Beställningen stängs automatiskt ${dayTimeL(r.close_at, L)}.`, `Ordering closes automatically ${dayTimeL(r.close_at, L)}.`)] : []),
+    ...(r.reminder_at ? [M(L, `Påminnelse${r.confirm ? ' (med bekräfta/avboka)' : ''} skickas ${dayTimeL(r.reminder_at, L)}.`,
+      `Reminder${r.confirm ? ' (with confirm/cancel)' : ''} is sent ${dayTimeL(r.reminder_at, L)}.`)] : []),
+    ...(r.mail_orders ? [M(L, 'Du får orderlistan mejlad när den stängs.', 'You get the order list by mail when it closes.')] : [])
   ].join('\n');
   const html = mailLayout(`
-    <p style="margin:0 0 6px">Hej ${escHtml(r.creator_name)}!</p>
-    <p style="margin:0">Din sambeställning <strong>${escHtml(roundTitle(r))}</strong> (${escHtml(r.place_name)}) är igång.</p>
-    ${box(`Dela länken:<br>${link(m.link, m.link)}`)}
-    <p style="margin:6px 0">Hantera rundan: ${link(m.manageLink, 'öppna admin')}<br>
-      PIN-kod: <strong style="font-family:${SLAB};font-size:20px;letter-spacing:2px">${escHtml(r.pin)}</strong></p>
-    ${r.event_date !== todayStr() ? `<p style="margin:10px 0 0">Datum: <strong>${escHtml(dateSv(r.event_date))}</strong></p>` : ''}
-    ${r.close_at ? `<p style="margin:10px 0 0">Beställningen stängs automatiskt <strong>${escHtml(dayTimeSv(r.close_at))}</strong>.</p>` : ''}
-    ${r.reminder_at ? `<p style="margin:4px 0 0">Påminnelse${r.confirm ? ' (med bekräfta/avboka)' : ''} skickas ${escHtml(dayTimeSv(r.reminder_at))}.</p>` : ''}
-    ${r.mail_orders ? '<p style="margin:4px 0 0">Du får orderlistan mejlad när den stängs.</p>' : ''}`);
+    <p style="margin:0 0 6px">${M(L, 'Hej', 'Hi')} ${escHtml(r.creator_name)}!</p>
+    <p style="margin:0">${M(L, 'Din sambeställning', 'Your group order')} <strong>${escHtml(roundTitle(r))}</strong> (${escHtml(r.place_name)}) ${M(L, 'är igång.', 'is up.')}</p>
+    ${box(`${M(L, 'Dela länken', 'Share the link')}:<br>${link(m.link, m.link)}`)}
+    <p style="margin:6px 0">${M(L, 'Hantera rundan', 'Manage the round')}: ${link(m.manageLink, M(L, 'öppna admin', 'open admin'))}<br>
+      PIN: <strong style="font-family:${SLAB};font-size:20px;letter-spacing:2px">${escHtml(r.pin)}</strong></p>
+    ${r.event_date !== todayStr() ? `<p style="margin:10px 0 0">${M(L, 'Datum', 'Date')}: <strong>${escHtml(dateL(r.event_date, L))}</strong></p>` : ''}
+    ${r.close_at ? `<p style="margin:10px 0 0">${M(L, 'Beställningen stängs automatiskt', 'Ordering closes automatically')} <strong>${escHtml(dayTimeL(r.close_at, L))}</strong>.</p>` : ''}
+    ${r.reminder_at ? `<p style="margin:4px 0 0">${M(L, `Påminnelse${r.confirm ? ' (med bekräfta/avboka)' : ''} skickas`, `Reminder${r.confirm ? ' (with confirm/cancel)' : ''} is sent`)} ${escHtml(dayTimeL(r.reminder_at, L))}.</p>` : ''}
+    ${r.mail_orders ? `<p style="margin:4px 0 0">${M(L, 'Du får orderlistan mejlad när den stängs.', 'You get the order list by mail when it closes.')}</p>` : ''}`, L);
   return { subject, text, html };
 }
 
@@ -846,111 +1055,123 @@ function groupLines(orders) {
   return [...groups.values()].sort((a, b) => a.t.localeCompare(b.t, 'sv')).map((g) => `${g.n}× ${g.t} (${g.nrs.join(', ')})`);
 }
 
+// To the creator. The lines are what the restaurant gets, so they stay as typed in the menu.
 function orderListMail(r, orders) {
+  const L = r.lang || 'sv';
   const m = manageRound(r);
-  const subject = `Orderlista: ${roundTitle(r)} (${orders.length} st)`;
+  const subject = M(L, `Orderlista: ${roundTitle(r)} (${orders.length} st)`, `Order list: ${roundTitle(r)} (${orders.length})`);
   const lines = orders.map(orderLine);
   const groups = groupLines(orders);
+  const drinks = drinkLines(orders);
+  const drinkHead = M(L, 'Dricka (hämtas själv)', 'Drinks (pick up yourself)');
   const text = [
-    `Orderlista – ${roundTitle(r)} (${r.place_name})`, '',
-    ...(lines.length ? lines : ['Inga beställningar.']),
-    ...(groups.length ? ['', 'Sammanställt:', ...groups] : []),
-    '', `Hantera: ${m.manageLink}  (PIN ${r.pin})`
+    `${M(L, 'Orderlista', 'Order list')} – ${roundTitle(r)} (${r.place_name})`, '',
+    ...(lines.length ? lines : [M(L, 'Inga beställningar.', 'No orders.')]),
+    ...(drinks.length ? ['', `${drinkHead}:`, ...drinks] : []),
+    ...(groups.length ? ['', `${M(L, 'Sammanställt', 'Summary')}:`, ...groups] : []),
+    '', `${M(L, 'Hantera', 'Manage')}: ${m.manageLink}  (PIN ${r.pin})`
   ].join('\n');
   const html = mailLayout(`
-    <p style="margin:0">Beställningen <strong>${escHtml(roundTitle(r))}</strong> (${escHtml(r.place_name)}) är stängd – ${orders.length} st.</p>
-    ${box(lines.length ? lines.map(escHtml).join('<br>') : 'Inga beställningar.')}
-    ${groups.length ? `<p style="margin:14px 0 4px;color:#5b6570">Sammanställt</p>${box(groups.map(escHtml).join('<br>'))}` : ''}
-    <p style="margin:14px 0 0">${link(m.manageLink, 'Hantera rundan')} · PIN ${escHtml(r.pin)}</p>`);
+    <p style="margin:0">${M(L, 'Beställningen', 'The order')} <strong>${escHtml(roundTitle(r))}</strong> (${escHtml(r.place_name)}) ${M(L, 'är stängd', 'is closed')} – ${orders.length} ${M(L, 'st', 'orders')}.</p>
+    ${box(lines.length ? lines.map(escHtml).join('<br>') : M(L, 'Inga beställningar.', 'No orders.'))}
+    ${drinks.length ? `<p style="margin:14px 0 4px;color:#5b6570">${drinkHead}</p>${box(drinks.map(escHtml).join('<br>'))}` : ''}
+    ${groups.length ? `<p style="margin:14px 0 4px;color:#5b6570">${M(L, 'Sammanställt', 'Summary')}</p>${box(groups.map(escHtml).join('<br>'))}` : ''}
+    <p style="margin:14px 0 0">${link(m.manageLink, M(L, 'Hantera rundan', 'Manage the round'))} · PIN ${escHtml(r.pin)}</p>`, L);
   return { subject, text, html };
 }
 
-const btn = (href, text, bg) => `<a href="${escHtml(href)}" style="display:inline-block;background:${bg};color:#fff;text-decoration:none;padding:11px 20px;border-radius:8px;font-weight:700;margin:0 8px 8px 0">${escHtml(text)}</a>`;
-
 function reminderMail(o, r) {
+  const L = o.lang || 'sv';
   const answer = `${PUBLIC_URL}/svar/${o.pay_token}`;
-  const when = r.event_date === todayStr() ? 'idag' : dateSv(r.event_date);
-  const subject = `${r.confirm ? 'Bekräfta: ' : 'Påminnelse: '}${roundTitle(r)} ${when}`;
+  const when = r.event_date === todayStr() ? M(L, 'idag', 'today') : dateL(r.event_date, L);
+  const subject = `${r.confirm ? M(L, 'Bekräfta: ', 'Confirm: ') : M(L, 'Påminnelse: ', 'Reminder: ')}${roundTitle(r)} ${when}`;
   const text = [
-    `Hej ${o.customer_name}!`, '',
-    `Påminnelse: du har beställt mat från ${r.place_name} ${when}${r.food_eta ? ` (ca ${r.food_eta})` : ''}.`,
-    `#${o.nr} ${orderText(o)}`, '',
+    M(L, `Hej ${o.customer_name}!`, `Hi ${o.customer_name}!`), '',
+    M(L, `Påminnelse: du har beställt mat från ${r.place_name} ${when}`, `Reminder: you have ordered food from ${r.place_name} ${when}`) + (r.food_eta ? ` (${M(L, 'ca', 'approx.')} ${r.food_eta}).` : '.'),
+    `#${o.nr} ${orderTextFull(o)}`, '',
     ...(r.confirm
-      ? [`Bekräfta eller avboka här: ${answer}`, ...(r.close_at ? [`Svara senast ${dayTimeSv(r.close_at)}.`] : [])]
-      : [`Kan du inte? Avboka här: ${answer}`]),
+      ? [M(L, `Bekräfta eller avboka här: ${answer}`, `Confirm or cancel here: ${answer}`),
+        ...(r.close_at ? [M(L, `Svara senast ${dayTimeL(r.close_at, L)}.`, `Answer by ${dayTimeL(r.close_at, L)}.`)] : [])]
+      : [M(L, `Kan du inte? Avboka här: ${answer}`, `Can't make it? Cancel here: ${answer}`)]),
+    `${M(L, 'Ändra beställningen', 'Change your order')}: ${editLink(o, r)}`,
     '', `/${r.creator_name}`
   ].join('\n');
   const html = mailLayout(`
-    <p style="margin:0 0 6px">Hej ${escHtml(o.customer_name)}!</p>
-    <p style="margin:0">Påminnelse: du har beställt mat från <strong>${escHtml(r.place_name)}</strong> <strong>${escHtml(when)}</strong>${r.food_eta ? ` (ca ${escHtml(r.food_eta)})` : ''}.</p>
+    <p style="margin:0 0 6px">${M(L, 'Hej', 'Hi')} ${escHtml(o.customer_name)}!</p>
+    <p style="margin:0">${M(L, 'Påminnelse: du har beställt mat från', 'Reminder: you have ordered food from')} <strong>${escHtml(r.place_name)}</strong> <strong>${escHtml(when)}</strong>${r.food_eta ? ` (${M(L, 'ca', 'approx.')} ${escHtml(r.food_eta)})` : ''}.</p>
     ${orderBox(o)}
     ${r.confirm
-      ? `<p style="margin:14px 0 10px">Står du fast vid beställningen?${r.close_at ? ` Svara senast <strong>${escHtml(dayTimeSv(r.close_at))}</strong>.` : ''}</p>
-         <div>${btn(answer + '?a=ja', 'Bekräfta', '#05c46b')}${btn(answer + '?a=nej', 'Avboka', '#f53b57')}</div>`
-      : `<p style="margin:14px 0 0;color:#5b6570">Kan du inte? ${link(answer + '?a=nej', 'Avboka här')}.</p>`}
-    <p style="margin:14px 0 0">/${escHtml(r.creator_name)}</p>`);
+      ? `<p style="margin:14px 0 10px">${M(L, 'Står du fast vid beställningen?', 'Still want it?')}${r.close_at ? ` ${M(L, 'Svara senast', 'Answer by')} <strong>${escHtml(dayTimeL(r.close_at, L))}</strong>.` : ''}</p>
+         <div>${btn(answer + '?a=ja', M(L, 'Bekräfta', 'Confirm'), '#05c46b')}${btn(answer + '?a=nej', M(L, 'Avboka', 'Cancel'), '#f53b57')}</div>`
+      : `<p style="margin:14px 0 0;color:#5b6570">${M(L, 'Kan du inte?', "Can't make it?")} ${link(answer + '?a=nej', M(L, 'Avboka här', 'Cancel here'))}.</p>`}
+    <p style="margin:10px 0 0;color:#5b6570">${link(editLink(o, r), M(L, 'Ändra beställningen', 'Change your order'))}</p>
+    <p style="margin:14px 0 0">/${escHtml(r.creator_name)}</p>`, L);
   return { subject, text, html };
 }
 
 function foodMail(o, r, extra) {
-  const subject = `Maten är här! – ${roundTitle(r)}`;
+  const L = o.lang || 'sv';
+  const subject = `${M(L, 'Maten är här!', 'The food is here!')} – ${roundTitle(r)}`;
   const text = [
-    `Hej ${o.customer_name}!`, '', `Maten från ${r.place_name} har kommit.`, `#${o.nr} ${orderText(o)}`,
-    ...(extra ? ['', extra] : []), '', 'Smaklig måltid!'
+    M(L, `Hej ${o.customer_name}!`, `Hi ${o.customer_name}!`), '',
+    M(L, `Maten från ${r.place_name} har kommit.`, `The food from ${r.place_name} has arrived.`), `#${o.nr} ${orderTextFull(o)}`,
+    ...(extra ? ['', extra] : []), '', M(L, 'Smaklig måltid!', 'Enjoy your meal!')
   ].join('\n');
   const html = mailLayout(`
-    <p style="margin:0 0 6px">Hej ${escHtml(o.customer_name)}!</p>
-    <p style="margin:0">Maten från <strong>${escHtml(r.place_name)}</strong> har kommit.</p>
+    <p style="margin:0 0 6px">${M(L, 'Hej', 'Hi')} ${escHtml(o.customer_name)}!</p>
+    <p style="margin:0">${M(L, 'Maten från', 'The food from')} <strong>${escHtml(r.place_name)}</strong> ${M(L, 'har kommit.', 'has arrived.')}</p>
     ${orderBox(o)}
     ${extraHtml(extra)}
-    <p style="margin:14px 0 0">Smaklig måltid!</p>`);
+    <p style="margin:14px 0 0">${M(L, 'Smaklig måltid!', 'Enjoy your meal!')}</p>`, L);
   return { subject, text, html };
 }
 
 async function payMail(o, r, extra, isReminder = false) {
+  const L = o.lang || 'sv';
   const mo = money(o, sharesFor(r.id));
   const sw = swishFor(o, r, mo.outstanding);
   const payLink = `${PUBLIC_URL}/pay/${o.pay_token}`;
   const changed = o.final_price != null && o.final_price !== o.total_price;
-  const subject = `${isReminder ? 'Påminnelse – ' : ''}Att betala: ${sw.amount} kr – ${roundTitle(r)}`;
-  const label = r.shared_label || 'Gemensam kostnad';
+  const subject = `${isReminder ? M(L, 'Påminnelse – ', 'Reminder – ') : ''}${M(L, 'Att betala', 'To pay')}: ${sw.amount} kr – ${roundTitle(r)}`;
+  const label = r.shared_label || M(L, 'Gemensam kostnad', 'Shared cost');
   const parts = [
-    ...(mo.share || mo.paid ? [[`Mat${changed ? ' (enligt kvittot)' : ''}`, `${mo.food} kr`]] : []),
-    ...(mo.share ? [[`${label} (din del)`, `${mo.share} kr`]] : []),
-    ...(mo.paid ? [['Redan betalt', `−${mo.paid} kr`]] : [])
+    ...(mo.share || mo.paid ? [[`${M(L, 'Mat', 'Food')}${changed ? M(L, ' (enligt kvittot)', ' (per receipt)') : ''}`, `${mo.food} kr`]] : []),
+    ...(mo.share ? [[`${label} (${M(L, 'din del', 'your share')})`, `${mo.share} kr`]] : []),
+    ...(mo.paid ? [[M(L, 'Redan betalt', 'Already paid'), `−${mo.paid} kr`]] : [])
   ];
+  const changedTxt = M(L, `Justerat efter kvittot – menypriset var ${o.total_price} kr.`, `Adjusted to the receipt – the menu price was ${o.total_price} kr.`);
   const qrPng = await QRCode.toBuffer(sw.qrText, { type: 'png', width: 360, margin: 2, errorCorrectionLevel: 'M' });
   const text = [
-    `Hej ${o.customer_name}!`, '',
-    ...(isReminder ? ['Påminnelse: vi har inte fått din betalning än.', ''] : []),
-    `Att betala för maten från ${r.place_name}: ${sw.amount} kr`,
-    `#${o.nr} ${orderText(o)}`,
+    M(L, `Hej ${o.customer_name}!`, `Hi ${o.customer_name}!`), '',
+    ...(isReminder ? [M(L, 'Påminnelse: vi har inte fått din betalning än.', "Reminder: we haven't received your payment yet."), ''] : []),
+    M(L, `Att betala för maten från ${r.place_name}: ${sw.amount} kr`, `To pay for the food from ${r.place_name}: ${sw.amount} kr`),
+    `#${o.nr} ${orderTextFull(o)}`,
     ...parts.map(([a, b]) => `  ${a}: ${b}`),
-    ...(changed ? [`(Justerat efter kvittot – menypriset var ${o.total_price} kr.)`] : []),
-    '', `Swisha till: ${r.swish_number}`, `Meddelande: ${sw.message}`, '',
-    `QR-kod och Swish-knapp: ${payLink}`,
-    ...(extra ? ['', extra] : []), '', 'Tack!'
+    ...(changed ? [`(${changedTxt})`] : []),
+    '', `${M(L, 'Swisha till', 'Swish to')}: ${r.swish_number}`, `${M(L, 'Meddelande', 'Message')}: ${sw.message}`, '',
+    `${M(L, 'QR-kod och Swish-knapp', 'QR code and Swish button')}: ${payLink}`,
+    ...(extra ? ['', extra] : []), '', M(L, 'Tack!', 'Thanks!')
   ].join('\n');
   const html = mailLayout(`
-    <p style="margin:0 0 6px">Hej ${escHtml(o.customer_name)}!</p>
-    <p style="margin:0">${isReminder ? 'Påminnelse – vi har inte fått din betalning än. ' : ''}Här är vad du ska betala för maten från <strong>${escHtml(r.place_name)}</strong>.</p>
+    <p style="margin:0 0 6px">${M(L, 'Hej', 'Hi')} ${escHtml(o.customer_name)}!</p>
+    <p style="margin:0">${isReminder ? M(L, 'Påminnelse – vi har inte fått din betalning än. ', "Reminder – we haven't received your payment yet. ") : ''}${M(L, 'Här är vad du ska betala för maten från', 'Here is what you owe for the food from')} <strong>${escHtml(r.place_name)}</strong>.</p>
     ${orderBox(o)}
     ${parts.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 6px;font-size:14px;color:#5b6570">
       ${parts.map(([a, b]) => `<tr><td style="padding:2px 16px 2px 0">${escHtml(a)}</td><td style="padding:2px 0;text-align:right">${escHtml(b)}</td></tr>`).join('')}</table>` : ''}
     <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px 0 4px;font-size:15px">
-      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">Belopp</td>
+      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">${M(L, 'Belopp', 'Amount')}</td>
           <td style="padding:3px 0;font-family:${SLAB};font-weight:700;font-size:22px">${sw.amount} kr</td></tr>
-      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">Swish till</td><td style="padding:3px 0"><strong>${escHtml(r.swish_number)}</strong></td></tr>
-      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">Meddelande</td><td style="padding:3px 0">${escHtml(sw.message)}</td></tr>
+      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">${M(L, 'Swish till', 'Swish to')}</td><td style="padding:3px 0"><strong>${escHtml(r.swish_number)}</strong></td></tr>
+      <tr><td style="padding:3px 16px 3px 0;color:#5b6570">${M(L, 'Meddelande', 'Message')}</td><td style="padding:3px 0">${escHtml(sw.message)}</td></tr>
     </table>
-    ${changed ? `<p style="margin:2px 0 0;color:#5b6570;font-size:13px">Justerat efter kvittot – menypriset var ${o.total_price} kr.</p>` : ''}
+    ${changed ? `<p style="margin:2px 0 0;color:#5b6570;font-size:13px">${changedTxt}</p>` : ''}
     <div style="margin:22px 0 6px">
-      <img src="cid:swishqr" width="180" height="180" alt="Swish QR-kod" style="display:block;border:0;width:180px;height:180px">
-      <div style="color:#5b6570;font-size:13px;margin-top:4px">Skanna med Swish-appen</div>
+      <img src="cid:swishqr" width="180" height="180" alt="Swish QR" style="display:block;border:0;width:180px;height:180px">
+      <div style="color:#5b6570;font-size:13px;margin-top:4px">${M(L, 'Skanna med Swish-appen', 'Scan with the Swish app')}</div>
     </div>
-    <p style="margin:16px 0">På mobilen: ${link(payLink, 'öppna betalningssidan')} och tryck på "Öppna Swish".</p>
+    <p style="margin:16px 0">${M(L, 'På mobilen', 'On your phone')}: ${link(payLink, M(L, 'öppna betalningssidan', 'open the payment page'))} ${M(L, 'och tryck på "Öppna Swish".', 'and tap "Open Swish".')}</p>
     ${extraHtml(extra)}
-    <p style="margin:14px 0 0">Tack!</p>`);
+    <p style="margin:14px 0 0">${M(L, 'Tack!', 'Thanks!')}</p>`, L);
   return {
     subject, text, html,
     attachments: [{ filename: 'swish-qr.png', content: qrPng, contentType: 'image/png', cid: 'swishqr', contentDisposition: 'inline' }]
@@ -1043,17 +1264,21 @@ async function onClosed(r) {
 }
 
 // ---------- Webhooks: Teams (Workflows), Slack, Discord or plain JSON ----------
+// Webhook texts, per hook language (L = 'sv' | 'en')
 const EVENT_TEXT = {
-  'round.created': (r) => `🍕 ${r.creator_name} startar en sambeställning: ${roundTitle(r)}` +
+  'round.created': (r, x, L = 'sv') => `🍕 ${r.creator_name} ${M(L, 'startar en sambeställning', 'is starting a group order')}: ${roundTitle(r)}` +
     `${r.name ? ` (${[r.place_name, r.location_name].filter(Boolean).join(', ')})` : r.location_name ? ` (${r.location_name})` : ''}` +
-    `${r.company_name ? ` för ${r.company_name}` : ''}` +
-    `${r.event_date !== todayStr() ? ` för ${dateSv(r.event_date)}` : ''}${r.close_at ? ` – beställ senast ${dayTimeSv(r.close_at)}` : ''}`,
-  'round.closed': (r) => `🔒 ${roundTitle(r)} är stängd – ${db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n} beställningar.`,
-  'food.arrived': (r, x) => `🍽️ Maten från ${r.place_name} är här! (${roundTitle(r)})${x && x.extra ? ` ${x.extra}` : ''}`
+    `${r.company_name ? ` ${M(L, 'för', 'for')} ${r.company_name}` : ''}` +
+    `${r.event_date !== todayStr() ? ` ${M(L, 'för', 'for')} ${dateL(r.event_date, L)}` : ''}${r.close_at ? ` – ${M(L, 'beställ senast', 'order by')} ${dayTimeL(r.close_at, L)}` : ''}`,
+  'round.closed': (r, x, L = 'sv') => {
+    const n = db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n;
+    return `🔒 ${roundTitle(r)} ${M(L, `är stängd – ${n} beställningar.`, `is closed – ${n} orders.`)}`;
+  },
+  'food.arrived': (r, x, L = 'sv') => `🍽️ ${M(L, `Maten från ${r.place_name} är här!`, `The food from ${r.place_name} is here!`)} (${roundTitle(r)})${x && x.extra ? ` ${x.extra}` : ''}`
 };
 const getHooks = () => { try { return JSON.parse(getSetting('webhooks', '[]')); } catch { return []; } };
 
-function hookPayload(format, event, r, text) {
+function hookPayload(format, event, r, text, lang = 'sv') {
   const link = `${PUBLIC_URL}/r/${r.slug}`;
   if (format === 'slack') return { text: `${text}\n${link}` };
   if (format === 'discord') return { content: `${text}\n${link}` };
@@ -1065,7 +1290,7 @@ function hookPayload(format, event, r, text) {
         content: {
           $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4',
           body: [{ type: 'TextBlock', text, wrap: true, weight: 'Bolder' }],
-          actions: event === 'food.arrived' ? [] : [{ type: 'Action.OpenUrl', title: 'Öppna sambeställningen', url: link }]
+          actions: event === 'food.arrived' ? [] : [{ type: 'Action.OpenUrl', title: M(lang, 'Öppna sambeställningen', 'Open the group order'), url: link }]
         }
       }]
     };
@@ -1078,10 +1303,10 @@ function hookPayload(format, event, r, text) {
 }
 
 async function postHook(h, event, r, extra) {
-  const text = EVENT_TEXT[event](r, extra);
+  const text = EVENT_TEXT[event](r, extra, h.lang === 'en' ? 'en' : 'sv');
   const res = await fetch(h.url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(hookPayload(h.format, event, r, text)), signal: AbortSignal.timeout(8000)
+    body: JSON.stringify(hookPayload(h.format, event, r, text, h.lang)), signal: AbortSignal.timeout(8000)
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
@@ -1109,9 +1334,10 @@ app.get('/api/admin/overview', requireAdmin, (req, res) => {
     mailConfigured,
     locations: listLocations(),
     companies: listCompanies(),
-    places: db.prepare('SELECT id, name, location_id FROM places ORDER BY name COLLATE NOCASE').all(),
-    menuItems: db.prepare('SELECT id, place_id, name, price FROM menu_items ORDER BY name COLLATE NOCASE').all(),
-    options: db.prepare('SELECT id, place_id, kind, name, price FROM place_options ORDER BY kind, id').all(),
+    places: db.prepare('SELECT id, name, location_id, phone, address, url, note FROM places ORDER BY name COLLATE NOCASE').all(),
+    menuItems: db.prepare('SELECT id, place_id, name, price, category FROM menu_items ORDER BY name COLLATE NOCASE').all(),
+    options: db.prepare('SELECT id, place_id, kind, name, price, applies_to FROM place_options ORDER BY kind, id').all()
+      .map((o) => ({ ...o, applies_to: o.applies_to ? JSON.parse(o.applies_to) : null })),
     rounds: db.prepare(`${ROUND_SELECT} ORDER BY r.created_at DESC`).all().map(manageRound)
   });
 });
@@ -1136,6 +1362,11 @@ app.patch('/api/admin/places/:id', requireAdmin, (req, res) => {
       if (!name) return res.status(400).json({ error: 'Ange ställets namn.' });
       db.prepare('UPDATE places SET name = ? WHERE id = ?').run(name, id);
     }
+    const cleanUrl = (u) => { const v = clean(u, 300); return !v || /^https?:\/\//i.test(v) ? v : 'https://' + v; };
+    for (const [k, max] of [['phone', 40], ['address', 120], ['note', 200]]) {
+      if (k in req.body) db.prepare(`UPDATE places SET ${k} = ? WHERE id = ?`).run(clean(req.body[k], max), id);
+    }
+    if ('url' in req.body) db.prepare('UPDATE places SET url = ? WHERE id = ?').run(cleanUrl(req.body.url), id);
     if ('locationId' in req.body) {
       const loc = req.body.locationId ? toInt(req.body.locationId) : null;
       if (loc && !db.prepare('SELECT 1 FROM locations WHERE id = ?').get(loc)) return res.status(400).json({ error: 'Orten finns inte.' });
@@ -1219,12 +1450,64 @@ app.delete('/api/admin/companies/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Paste a menu ----------
+// Sections: [Rätter] [Dricka] [Tillval] [Bortval] (or English). Lines: "Vesuvio 115", "Coca-Cola 33 cl – 25 kr".
+// Without a section: "+Extra ost 15" = add-on, "-Utan lök" = removal, otherwise a dish. The price is the last number.
+const SECTIONS = {
+  main: /^(rätter|rätt|mat|meny|huvudrätter|dishes|food|mains?)$/i,
+  drink: /^(dricka|drycker|dryck|drinks?|beverages?)$/i,
+  addon: /^(tillval|extra|add-?ons?|extras)$/i,
+  removal: /^(bortval|utan|remove|removals|leave out)$/i
+};
+function parseMenu(text) {
+  let section = 'main';
+  const out = { main: [], drink: [], addon: [], removal: [], skipped: [] };
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    let line = raw.trim();
+    if (!line) continue;
+    const head = line.match(/^\[?\s*([^\]]+?)\s*\]?\s*:?$/);
+    if (/^\[.*\]$/.test(line) || (head && Object.values(SECTIONS).some((re) => re.test(head[1])) && !/\d/.test(line))) {
+      const name = head ? head[1] : line;
+      const hit = Object.entries(SECTIONS).find(([, re]) => re.test(name));
+      if (hit) { section = hit[0]; continue; }
+    }
+    let kind = section;
+    if (section === 'main' && /^\+/.test(line)) { kind = 'addon'; line = line.slice(1).trim(); }
+    else if (section === 'main' && /^[-–]\s*\D/.test(line)) { kind = 'removal'; line = line.replace(/^[-–]\s*/, ''); }
+    // last number (115 / 115 kr / 115:- / 115,00)
+    const m = line.match(/^(.*?)[\s.;:,–\-|]*?(\d+)(?:[.,]\d{1,2})?\s*(?:kr|sek|:-|-)?\s*$/i);
+    let name = line, price = null;
+    if (m && m[1].trim()) { name = m[1].replace(/[\s.;:,–\-|]+$/, '').trim(); price = Number(m[2]); }
+    name = name.slice(0, 80);
+    if (!name) { out.skipped.push(raw.trim()); continue; }
+    if ((kind === 'main' || kind === 'drink') && price === null) { out.skipped.push(raw.trim()); continue; }
+    out[kind].push({ name, price: kind === 'removal' ? 0 : (price ?? 0) });
+  }
+  return out;
+}
+app.post('/api/admin/places/:id/import', requireAdmin, (req, res) => {
+  const id = toInt(req.params.id);
+  if (!db.prepare('SELECT 1 FROM places WHERE id = ?').get(id)) return res.status(404).json({ error: T(req, 'Stället finns inte.', 'Place not found.') });
+  const parsed = parseMenu(req.body.text);
+  if (req.body.dryRun) return res.json(parsed);
+  db.transaction(() => {
+    if (req.body.replace) {
+      db.prepare('DELETE FROM menu_items WHERE place_id = ?').run(id);
+      db.prepare('DELETE FROM place_options WHERE place_id = ?').run(id);
+    }
+    for (const k of ['main', 'drink']) for (const x of parsed[k]) db.prepare('INSERT INTO menu_items (place_id, name, price, category) VALUES (?, ?, ?, ?)').run(id, x.name, x.price, k);
+    for (const k of ['addon', 'removal']) for (const x of parsed[k]) db.prepare('INSERT INTO place_options (place_id, kind, name, price) VALUES (?, ?, ?, ?)').run(id, k, x.name, x.price);
+  })();
+  res.json({ ok: true, ...parsed });
+});
+
 app.post('/api/admin/menu', requireAdmin, (req, res) => {
   const placeId = toInt(req.body.placeId);
   const name = clean(req.body.name, 80);
   const price = toInt(req.body.price);
   if (!placeId || !name || Number.isNaN(price) || price < 0) return res.status(400).json({ error: 'Namn och pris krävs.' });
-  const info = db.prepare('INSERT INTO menu_items (place_id, name, price) VALUES (?, ?, ?)').run(placeId, name, price);
+  const category = req.body.category === 'drink' ? 'drink' : 'main';
+  const info = db.prepare('INSERT INTO menu_items (place_id, name, price, category) VALUES (?, ?, ?, ?)').run(placeId, name, price, category);
   res.status(201).json({ id: Number(info.lastInsertRowid) });
 });
 
@@ -1233,6 +1516,7 @@ app.patch('/api/admin/menu/:id', requireAdmin, (req, res) => {
   const price = toInt(req.body.price);
   if (!name || Number.isNaN(price) || price < 0) return res.status(400).json({ error: 'Namn och pris krävs.' });
   db.prepare('UPDATE menu_items SET name = ?, price = ? WHERE id = ?').run(name, price, toInt(req.params.id));
+  if ('category' in req.body) db.prepare('UPDATE menu_items SET category = ? WHERE id = ?').run(req.body.category === 'drink' ? 'drink' : 'main', toInt(req.params.id));
   res.json({ ok: true });
 });
 
@@ -1249,6 +1533,17 @@ app.post('/api/admin/options', requireAdmin, (req, res) => {
   if (!placeId || !name) return res.status(400).json({ error: 'Ange namn.' });
   const info = db.prepare('INSERT INTO place_options (place_id, kind, name, price) VALUES (?, ?, ?, ?)').run(placeId, kind, name, price);
   res.status(201).json({ id: Number(info.lastInsertRowid) });
+});
+
+// Which dishes an add-on/removal applies to: list of menu item ids, or null/[] = all dishes
+app.patch('/api/admin/options/:id', requireAdmin, (req, res) => {
+  const id = toInt(req.params.id);
+  const opt = db.prepare('SELECT place_id FROM place_options WHERE id = ?').get(id);
+  if (!opt) return res.status(404).json({ error: 'Finns inte.' });
+  const ids = Array.isArray(req.body.appliesTo) ? req.body.appliesTo.map(toInt)
+    .filter((x) => db.prepare("SELECT 1 FROM menu_items WHERE id = ? AND place_id = ? AND category = 'main'").get(x, opt.place_id)) : [];
+  db.prepare('UPDATE place_options SET applies_to = ? WHERE id = ?').run(ids.length ? JSON.stringify(ids) : null, id);
+  res.json({ ok: true });
 });
 
 app.delete('/api/admin/options/:id', requireAdmin, (req, res) => {
@@ -1271,7 +1566,7 @@ app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
     const url = clean(h.url, 1000);
     if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: `Ogiltig adress (måste börja med http:// eller https://): ${url.slice(0, 50)}` });
     hooks.push({
-      url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json',
+      url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json', lang: h.lang === 'en' ? 'en' : 'sv',
       events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS,
       locations: Array.isArray(h.locations) ? h.locations.map(toInt).filter((l) => db.prepare('SELECT 1 FROM locations WHERE id = ?').get(l)) : [],
       companies: Array.isArray(h.companies) ? h.companies.map(toInt).filter((c) => db.prepare('SELECT 1 FROM companies WHERE id = ?').get(c)) : []
@@ -1286,7 +1581,7 @@ app.post('/api/admin/webhooks/test', requireAdmin, async (req, res) => {
   const fake = { slug: 'test', name: 'Testrunda', place_name: 'Pizzeria Test', creator_name: 'SamMat', event_date: todayStr(),
     close_at: null, food_eta: '12:00', is_open: 1 };
   try {
-    await postHook({ url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json' }, 'round.created', fake);
+    await postHook({ url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json', lang: req.body.lang === 'en' ? 'en' : 'sv' }, 'round.created', fake);
     res.json({ ok: true });
   } catch (e) {
     res.status(502).json({ error: 'Misslyckades: ' + e.message });
@@ -1371,8 +1666,28 @@ function autoPurge() {
   for (const [t, s] of sessions) if (s.exp < now) sessions.delete(t);
 }
 
+// ---------- Daily backup into <data>/backups, kept BACKUP_DAYS days ----------
+const BACKUP_DIR = path.join(path.dirname(DB_PATH), 'backups');
+async function autoBackup() {
+  if (!BACKUP_DAYS) return;
+  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const file = path.join(BACKUP_DIR, `sammat-${todayStr()}.db`);
+  if (!fs.existsSync(file)) {
+    await db.backup(file);
+    fs.chmodSync(file, 0o600);
+    console.log(`Backup: ${file}`);
+  }
+  const cutoff = addDays(todayStr(), -BACKUP_DAYS);
+  for (const f of fs.readdirSync(BACKUP_DIR)) {
+    const m = f.match(/^sammat-(\d{4}-\d{2}-\d{2})\.db$/);
+    if (m && m[1] <= cutoff) fs.unlinkSync(path.join(BACKUP_DIR, f));
+  }
+}
+
 autoClose();
 autoPurge();
+autoBackup().catch((e) => console.error('Backup:', e.message));
+setInterval(() => autoBackup().catch((e) => console.error('Backup:', e.message)), 3600 * 1000).unref();
 setInterval(autoClose, 20 * 1000).unref();
 setInterval(() => autoRemind().catch(() => {}), 30 * 1000).unref();
 setInterval(() => autoPayRemind().catch((e) => console.error('Betalpåminnelse:', e.message)), 60 * 1000).unref();

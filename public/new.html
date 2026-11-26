@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SamMat – Starta sambeställning</title>
+  <title>SamMat</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
@@ -14,8 +14,8 @@
 </head>
 <body>
   <div class="wrap narrow">
-    <div class="topbar"><a href="/" class="logo">SamMat</a><a href="/">← Alla sambeställningar</a></div>
-    <div id="app" class="card"><p class="muted">Laddar…</p></div>
+    <div class="topbar"><a href="/" class="logo">SamMat</a><a href="/" data-sv="← Alla sambeställningar" data-en="← All group orders">← Alla sambeställningar</a></div>
+    <div id="app" class="card"><p class="muted">…</p></div>
   </div>
 
   <script>
@@ -23,7 +23,7 @@
     let mailConfigured = false;
 
     async function init() {
-      const [places, rounds] = await Promise.all([api('/api/places'), api('/api/rounds')]);
+      const [places, rounds, info] = await Promise.all([api('/api/places'), api('/api/rounds'), api('/api/info')]);
       mailConfigured = rounds.mailConfigured;
       const locs = rounds.locations || [];
       let loc = store.get('sammat_location');
@@ -32,98 +32,113 @@
       let comp = store.get('sammat_company');
       if (comp && !comps.some((c) => String(c.id) === comp)) comp = '';
       if (!places.length) {
-        appEl.innerHTML = '<h1>Inga ställen än</h1><p class="muted">En admin behöver lägga in ställen och menyer först.</p>';
+        appEl.innerHTML = `<h1>${L('Inga ställen än', 'No places yet')}</h1><p class="muted">${L('En admin behöver lägga in ställen och menyer först.', 'An admin needs to add places and menus first.')}</p>`;
         return;
       }
+      const opt = (v, sv, en) => `<option value="${v}">${L(sv, en)}</option>`;
+      const optional = `<span class="muted">(${L('valfritt', 'optional')})</span>`;
       appEl.innerHTML = `
-        <h1>Starta en sambeställning</h1>
-        <p class="muted">Du får en länk att dela och en PIN-kod för att hantera rundan.</p>
+        <h1>${L('Starta en sambeställning', 'Start a group order')}</h1>
+        <p class="muted">${L('Du får en länk att dela och en PIN-kod för att hantera rundan.', 'You get a link to share and a PIN code to manage the round.')}</p>
         <form id="f">
-          ${locs.length ? `<label for="loc">Ort</label>
+          ${info.createPin ? `<label for="createPin">${L('PIN för att starta en runda', 'PIN for starting a round')}</label>
+          <input id="createPin" type="password" inputmode="numeric" autocomplete="off" required maxlength="20" value="${esc(store.get('sammat_create_pin'))}" />
+          <p class="muted" style="margin:4px 0 0;font-size:.82rem">${L('Den här installationen kräver en PIN. Fråga den som driver SamMat.', 'This installation requires a PIN. Ask whoever runs SamMat.')}</p>` : ''}
+          ${locs.length ? `<label for="loc">${L('Ort', 'Location')}</label>
           <select id="loc">
-            <option value="">Alla orter</option>
+            <option value="">${L('Alla orter', 'All locations')}</option>
             ${locs.map((l) => `<option value="${l.id}" ${String(l.id) === loc ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
           </select>` : ''}
-          <label for="place">Ställe</label>
+          <label for="place">${L('Ställe', 'Place')}</label>
           <select id="place" required></select>
+          <div id="placeInfo"></div>
 
-          ${comps.length ? `<label for="comp">För företag</label>
+          ${comps.length ? `<label for="comp">${L('För företag', 'For company')}</label>
           <select id="comp">
-            <option value="">Alla i huset</option>
+            <option value="">${L('Alla i huset', 'Everyone in the building')}</option>
             ${comps.map((c) => `<option value="${c.id}" ${String(c.id) === comp ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
           </select>` : ''}
 
-          <label for="name">Namn på rundan <span class="muted">(valfritt)</span></label>
-          <input id="name" type="text" maxlength="50" placeholder="T.ex. Fredagspizza plan 3" />
+          <label for="name">${L('Namn på rundan', 'Name of the round')} ${optional}</label>
+          <input id="name" type="text" maxlength="50" placeholder="${L('T.ex. Fredagspizza plan 3', 'E.g. Friday pizza 3rd floor')}" />
 
           <div class="grid-form">
-            <div><label for="creator">Ditt namn</label>
+            <div><label for="creator">${L('Ditt namn', 'Your name')}</label>
               <input id="creator" type="text" required maxlength="40" autocomplete="given-name" value="${esc(store.get('sammat_name'))}" /></div>
-            <div><label for="swish">Ditt Swish-nummer</label>
+            <div><label for="swish">${L('Ditt Swish-nummer', 'Your Swish number')}</label>
               <input id="swish" type="tel" required placeholder="070 123 45 67" value="${esc(store.get('sammat_swish'))}" /></div>
           </div>
 
           <div class="grid-form">
-            <div><label for="date">Datum för maten</label>
+            <div><label for="date">${L('Datum för maten', 'Date of the food')}</label>
               <input id="date" type="date" required /></div>
-            <div><label for="eta">Maten kommer ca kl. <span class="muted">(valfritt)</span></label>
+            <div><label for="eta">${L('Maten kommer ca kl.', 'Food arrives approx.')} ${optional}</label>
               <input id="eta" type="time" /></div>
           </div>
-          <label for="payMode">Betalning</label>
+          <label for="payMode">${L('Betalning', 'Payment')}</label>
           <select id="payMode">
-            <option value="after">Efter maten – jag skickar betalningsmejl (kan justera efter kvittot)</option>
-            <option value="before">Direkt vid beställning – Swish visas när man beställt</option>
+            ${opt('after', 'Efter maten – jag skickar betalningsmejl (kan justera efter kvittot)', 'After the food – I send payment mails (can adjust to the receipt)')}
+            ${opt('before', 'Direkt vid beställning – Swish visas när man beställt', 'When ordering – Swish is shown right after ordering')}
           </select>
 
           <div class="grid-form">
-            <div><label for="shLabel">Gemensam kostnad <span class="muted">(valfritt)</span></label>
-              <input id="shLabel" type="text" maxlength="40" placeholder="T.ex. Utkörning" /></div>
-            <div><label for="shCost">Belopp kr</label><input id="shCost" type="number" min="0" placeholder="0" /></div>
+            <div><label for="shLabel">${L('Gemensam kostnad', 'Shared cost')} ${optional}</label>
+              <input id="shLabel" type="text" maxlength="40" placeholder="${L('T.ex. Utkörning', 'E.g. Delivery')}" /></div>
+            <div><label for="shCost">${L('Belopp kr', 'Amount kr')}</label><input id="shCost" type="number" min="0" placeholder="0" /></div>
           </div>
-          <p class="muted" style="margin:4px 0 0;font-size:.82rem">Delas lika på alla som beställer. Kan ändras senare.</p>
-          ${mailConfigured ? `<label for="payRemind">Påminn de som inte betalat</label>
+          <p class="muted" style="margin:4px 0 0;font-size:.82rem">${L('Delas lika på alla som beställer. Kan ändras senare.', 'Split equally between everyone who orders. Can be changed later.')}</p>
+          ${mailConfigured ? `<label for="payRemind">${L('Påminn de som inte betalat', "Remind those who haven't paid")}</label>
           <select id="payRemind">
-            <option value="0">Nej</option><option value="2">2 timmar efter betalningsmejlet</option><option value="4">4 timmar efter</option>
-            <option value="24">Dagen efter (24 h)</option><option value="48">Två dagar efter (48 h)</option>
+            ${opt(0, 'Nej', 'No')}${opt(2, '2 timmar efter betalningsmejlet', '2 hours after the payment mail')}${opt(4, '4 timmar efter', '4 hours after')}
+            ${opt(24, 'Dagen efter (24 h)', 'The day after (24 h)')}${opt(48, 'Två dagar efter (48 h)', 'Two days after (48 h)')}
           </select>` : ''}
 
-          <label for="closeAt">Stäng beställningar <span class="muted">(valfritt)</span></label>
+          <label for="closeAt">${L('Stäng beställningar', 'Close ordering')} ${optional}</label>
           <input id="closeAt" type="datetime-local" />
-          <p class="muted" style="margin:4px 0 0;font-size:.82rem">Tips: bokar ni flera dagar i förväg kan stopptiden vara dagen innan.</p>
+          <p class="muted" style="margin:4px 0 0;font-size:.82rem">${L('Tips: bokar ni flera dagar i förväg kan stopptiden vara dagen innan. Fram till dess kan alla ändra sin beställning.', 'Tip: when booking days ahead, the closing time can be the day before. Until then everyone can change their order.')}</p>
 
           ${mailConfigured ? `
-          <label for="remind">Påminnelse till alla som beställt <span class="muted">(valfritt)</span></label>
+          <label for="remind">${L('Påminnelse till alla som beställt', 'Reminder to everyone who ordered')} ${optional}</label>
           <select id="remind">
-            <option value="">Ingen påminnelse</option>
-            <option value="daybefore">Dagen innan kl. 16:00</option>
-            <option value="morning">Samma dag kl. 08:00</option>
-            <option value="beforeclose">2 timmar före stopptiden</option>
-            <option value="custom">Egen tid…</option>
+            ${opt('', 'Ingen påminnelse', 'No reminder')}
+            ${opt('daybefore', 'Dagen innan kl. 16:00', 'The day before at 16:00')}
+            ${opt('morning', 'Samma dag kl. 08:00', 'Same day at 08:00')}
+            ${opt('beforeclose', '2 timmar före stopptiden', '2 hours before closing')}
+            ${opt('custom', 'Egen tid…', 'Custom time…')}
           </select>
           <input id="remindAt" type="datetime-local" style="margin-top:8px" hidden />
           <label class="check" id="confirmRow" hidden><input type="checkbox" id="confirm" />
-            <span>Be alla bekräfta eller avboka i påminnelsen</span></label>
+            <span>${L('Be alla bekräfta eller avboka i påminnelsen', 'Ask everyone to confirm or cancel in the reminder')}</span></label>
           <p class="muted" id="remindInfo" style="margin:6px 0 0;font-size:.82rem"></p>` : ''}
 
-          <label for="email">Din e-post <span class="muted">(valfritt)</span></label>
+          <label for="email">${L('Din e-post', 'Your e-mail')} ${optional}</label>
           <input id="email" type="email" maxlength="120" autocomplete="email" value="${esc(store.get('sammat_email'))}" />
           ${mailConfigured ? `
           <label class="check"><input type="checkbox" id="mailOrders" />
-            <span>Mejla orderlistan till mig när beställningen stängs</span></label>
-          <p class="muted" style="margin:6px 0 0;font-size:.82rem">Med e-post får du också länkarna och PIN-koden mejlade.</p>` : ''}
+            <span>${L('Mejla orderlistan till mig när beställningen stängs', 'Mail me the order list when ordering closes')}</span></label>
+          <p class="muted" style="margin:6px 0 0;font-size:.82rem">${L('Med e-post får du också länkarna och PIN-koden mejlade.', 'With an e-mail you also get the links and the PIN code by mail.')}</p>` : ''}
 
           <div id="err"></div>
-          <button type="submit" class="primary" id="go">Starta</button>
+          <button type="submit" class="primary" id="go">${L('Starta', 'Start')}</button>
         </form>`;
 
       const $ = (id) => document.getElementById(id);
       function fillPlaces() {
         const l = $('loc') ? $('loc').value : '';
         const list = places.filter((p) => !l || !p.locationId || String(p.locationId) === l);
-        $('place').innerHTML = `<option value="">– Välj –</option>` + list.map((p) =>
+        $('place').innerHTML = `<option value="">– ${L('Välj', 'Choose')} –</option>` + list.map((p) =>
           `<option value="${p.id}">${esc(p.name)}${!l && p.locationName ? ` (${esc(p.locationName)})` : ''}</option>`).join('');
+        showPlace();
+      }
+      // Contact info for the chosen place (where to call / the menu)
+      function showPlace() {
+        const p = places.find((x) => x.id === Number($('place').value));
+        const bits = p ? [p.phone && `☎ <a href="tel:${esc(p.phone.replace(/\s/g, ''))}">${esc(p.phone)}</a>`, p.address && `📍 ${esc(p.address)}`,
+          p.url && `<a href="${esc(p.url)}" target="_blank" rel="noopener">${L('Meny', 'Menu')} ↗</a>`, p.note && esc(p.note)].filter(Boolean) : [];
+        $('placeInfo').innerHTML = bits.length ? `<div class="info" style="margin-top:8px">${bits.map((b) => `<span>${b}</span>`).join('')}</div>` : '';
       }
       fillPlaces();
+      $('place').onchange = showPlace;
       if ($('loc')) $('loc').onchange = () => { store.set('sammat_location', $('loc').value); fillPlaces(); };
       const nowLocal = () => { const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
       $('date').value = ymdLocal();
@@ -143,22 +158,21 @@
         $('remindAt').min = nowLocal();
         $('confirmRow').hidden = !v;
         const iso = reminderIso();
-        const info = $('remindInfo');
-        if (!v) info.textContent = '';
-        else if (v === 'beforeclose' && !closeIso()) info.textContent = 'Välj en stopptid först.';
-        else if (!iso) info.textContent = '';
-        else if (Date.parse(iso) < Date.now()) info.innerHTML = '<span style="color:var(--coral)">Den tiden har redan passerat – välj en annan.</span>';
-        else info.textContent = `Skickas ${whenShort(iso)}.`;
+        const out = $('remindInfo');
+        if (!v) out.textContent = '';
+        else if (v === 'beforeclose' && !closeIso()) out.textContent = L('Välj en stopptid först.', 'Choose a closing time first.');
+        else if (!iso) out.textContent = '';
+        else if (Date.parse(iso) < Date.now()) out.innerHTML = `<span style="color:var(--coral)">${L('Den tiden har redan passerat – välj en annan.', 'That time has already passed – choose another.')}</span>`;
+        else out.textContent = `${L('Skickas', 'Sent')} ${whenShort(iso)}.`;
       }
       ['remind', 'remindAt', 'date', 'closeAt'].forEach((id) => $(id) && $(id).addEventListener('change', updateRemind));
-      // Default the close time to the chosen date when it is left on another day
-      $('date').addEventListener('change', () => { if (!$('closeAt').value) $('closeAt').min = nowLocal(); });
 
       $('f').onsubmit = async (e) => {
         e.preventDefault();
         $('err').innerHTML = '';
         $('go').disabled = true;
         const body = {
+          createPin: $('createPin') ? $('createPin').value : undefined,
           placeId: Number($('place').value),
           name: $('name').value.trim(),
           creatorName: $('creator').value.trim(),
@@ -180,6 +194,7 @@
           const r = await api('/api/rounds', 'POST', body);
           store.set('sammat_name', body.creatorName);
           if ($('comp')) store.set('sammat_company', $('comp').value);
+          if ($('createPin')) store.set('sammat_create_pin', body.createPin);
           store.set('sammat_swish', body.swishNumber);
           if (body.creatorEmail) store.set('sammat_email', body.creatorEmail);
           done(r, body.creatorEmail);
@@ -192,26 +207,26 @@
 
     function done(r, email) {
       appEl.innerHTML = `
-        <h1>Klart! 🎉</h1>
-        <p><strong>${esc(r.title)}</strong> är igång – för <strong>${esc(dayWord(r.eventDate))}</strong>${r.closeAt ? `, stänger <strong>${esc(whenShort(r.closeAt))}</strong>` : ''}.
-          ${r.reminderAt ? `<br><span class="muted">Påminnelse${r.confirm ? ' med bekräfta/avboka' : ''} skickas ${esc(whenShort(r.reminderAt))}.</span>` : ''}</p>
+        <h1>${L('Klart!', 'Done!')} 🎉</h1>
+        <p>${L(`<strong>${esc(r.title)}</strong> är igång – för <strong>${esc(dayWord(r.eventDate))}</strong>`, `<strong>${esc(r.title)}</strong> is up – for <strong>${esc(dayWord(r.eventDate))}</strong>`)}${r.closeAt ? `, ${L('stänger', 'closes')} <strong>${esc(whenShort(r.closeAt))}</strong>` : ''}.
+          ${r.reminderAt ? `<br><span class="muted">${L(`Påminnelse${r.confirm ? ' med bekräfta/avboka' : ''} skickas`, `Reminder${r.confirm ? ' with confirm/cancel' : ''} is sent`)} ${esc(whenShort(r.reminderAt))}.</span>` : ''}</p>
 
-        <label>Dela den här länken</label>
-        <div class="linkbox"><code>${esc(r.link)}</code><button class="secondary small" id="copyLink">Kopiera</button></div>
+        <label>${L('Dela den här länken', 'Share this link')}</label>
+        <div class="linkbox"><code>${esc(r.link)}</code><button class="secondary small" id="copyLink">${L('Kopiera', 'Copy')}</button></div>
 
-        <label style="margin-top:20px">Din PIN-kod för att hantera rundan</label>
+        <label style="margin-top:20px">${L('Din PIN-kod för att hantera rundan', 'Your PIN code to manage the round')}</label>
         <div class="pin-big">${esc(r.pin)}</div>
-        <p class="muted" style="margin-top:4px">Spara den – du behöver den från en annan enhet eller om du loggas ut.
-          ${email && mailConfigured ? `Den är också mejlad till ${esc(email)}.` : ''}</p>
+        <p class="muted" style="margin-top:4px">${L('Spara den – du behöver den från en annan enhet eller om du loggas ut.', 'Keep it – you need it on another device or if you get logged out.')}
+          ${email && mailConfigured ? L(`Den är också mejlad till ${esc(email)}.`, `It has also been sent to ${esc(email)}.`) : ''}</p>
 
         <div class="row" style="margin-top:18px">
-          <a class="cta" style="margin:0;flex:1" href="/r/${esc(r.slug)}">Beställ själv</a>
-          <a class="cta" style="margin:0;flex:1;background:var(--card-2)" href="/r/${esc(r.slug)}/admin">Hantera rundan</a>
+          <a class="cta" style="margin:0;flex:1" href="/r/${esc(r.slug)}">${L('Beställ själv', 'Order yourself')}</a>
+          <a class="cta" style="margin:0;flex:1;background:var(--card-2)" href="/r/${esc(r.slug)}/admin">${L('Hantera rundan', 'Manage the round')}</a>
         </div>`;
       document.getElementById('copyLink').onclick = (e) => copyText(r.link, e.target);
     }
 
-    init().catch((e) => { appEl.innerHTML = `<h1>Kunde inte ladda</h1><p class="muted">${esc(e.message)}</p>`; });
+    init().catch((e) => { appEl.innerHTML = `<h1>${L('Kunde inte ladda', 'Could not load')}</h1><p class="muted">${esc(e.message)}</p>`; });
   </script>
 </body>
 </html>

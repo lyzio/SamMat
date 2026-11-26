@@ -11,6 +11,9 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 
 - **Vem som helst startar en runda** och får en länk att dela och en slumpad 4-siffrig PIN att hantera den med. Flera rundor kan pågå samtidigt.
 - **Ingen inloggning för att beställa**: namn, e-post, rätt, tillval och bortval. Varje beställning blir en lapp på beställningssidan.
+- **Dricka med antal**: dryck läggs till med +/−. På orderlistan samlas den längst ner, eftersom alla hämtar sin dryck själva.
+- **Tillval per rätt**: tillval och bortval kan begränsas till vissa rätter.
+- **Ändra eller avboka själv**: efter beställningen visas en länk som fungerar tills beställningen stänger. Webbläsaren kommer ihåg den.
 - **Orderlista utan priser** att läsa upp, kopiera eller skriva ut, t.ex. `#1 (Anna) Vesuvio - Bearnaisesås - Utan lök`, plus en sammanställning per rätt.
 - **Stopptid och datum**: rundan kan stänga av sig själv och mejla orderlistan till den som startade den. Den kan också bokas upp till 60 dagar i förväg.
 - **Påminnelse med bekräfta/avboka**: dagen innan, samma morgon eller en egen tid.
@@ -24,7 +27,9 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Flera orter/kontor**: koppla varje ställe till en ort. Startsidan får en ortväljare, och webhooks kan skickas per ort. Utan inlagda orter syns inget av det.
 - **Flera företag i samma hus** (t.ex. ett kontorshotell): en runda kan gälla ett företag eller *Alla i huset*. Startsidan får en företagsväljare, och webhooks kan skickas per företag. Det är ett filter, ingen spärr.
 - **Installera som app** (PWA) från startsidan: en knapp i Chrome, Edge och Android, och en instruktion för Safari på iPhone, iPad och Mac.
-- **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor.
+- **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor. Klistra in en hel meny på en gång, och lägg in telefon, adress och menylänk per ställe.
+- **Svenska och engelska**: SV/EN-knapp på alla sidor. Mejlen kommer på mottagarens språk.
+- **Backup**: en säkerhetskopia per dygn i `data/backups/`, sparas i 7 dagar.
 - **Rensar efter sig**: när en runda avslutas raderas namn och e-post på riktigt. Gamla rundor rensas automatiskt.
 
 ## Installera
@@ -59,6 +64,9 @@ Peka din reverse proxy på `127.0.0.1:8102`. Gå sedan till `/admin`, logga in m
 | `MAIL_FROM` | Avsändare, t.ex. `SamMat <sammat@example.com>`. Måste vara verifierad hos mejltjänsten. |
 | `PURGE_DAYS` | Rundor raderas så många dagar efter sitt datum (standard 7). |
 | `MAX_ACTIVE_ROUNDS` | Max antal rundor samtidigt (standard 30). |
+| `CREATE_PIN` | Kräv en PIN för att starta en runda (tomt = vem som helst kan). |
+| `BACKUP_DAYS` | Daglig backup i `data/backups/`, sparas så många dagar (standard 7, 0 = av). |
+| `ORDER_LIMIT` | Max antal nya beställningar per IP och 10 minuter (standard 20). |
 | `FAVORITE_DAYS` | Hur länge "samma som förra gången" sparas efter senaste beställningen (standard 180). |
 
 En rad per `NYCKEL=värde`, utan citattecken. Värdena läses när containern skapas, så kör `up -d --force-recreate` efter ändringar.

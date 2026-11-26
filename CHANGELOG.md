@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.0 – 2026-11-26
+- Drinks as their own category with quantity (+/−). They are summed at the bottom of the order list ("Dricka (hämtas själv)"), since everyone picks them up themselves.
+- Add-ons and removals can be limited to certain dishes; the order form only shows what fits the chosen dish.
+- Change or cancel your own order with a link shown after ordering (no mail needed), until ordering closes. The browser remembers it ("Dina beställningar här").
+- Admin: paste a whole menu (`[Rätter]`, `[Dricka]`, `[Tillval]`, `[Bortval]`, `+…`, `-…`), with a preview. Contact details per place (phone, address, menu link, note), shown to whoever runs a round.
+- Swedish/English: SV | EN toggle on every page (first visit follows the browser), server errors, and mails in each recipient's language. Webhooks have their own language setting.
+- Optional `CREATE_PIN` to start rounds; per-IP order limit (`ORDER_LIMIT`, 20 per 10 min).
+- Built-in daily backup to `<data>/backups/`, kept `BACKUP_DAYS` (7; 0 = off).
+- Free-text field: "Valfri bortval eller allergier".
+
 ## 2.5.0 – 2026-11-26
 - Companies (e.g. an office hotel): a round is for one company or "Alla i huset". Company picker on the start page next to the location picker, chosen when starting a round, changeable in the round settings.
 - Webhooks can be limited to companies (each company's own Teams channel). Company shown in webhook text and JSON.

@@ -17,8 +17,8 @@
     <div class="topbar">
       <div><a href="/" class="logo">SamMat</a> <span class="muted">admin</span></div>
       <div class="row" style="flex:0 0 auto">
-        <a href="/">Startsidan</a>
-        <button id="logout" class="secondary small" hidden>Logga ut</button>
+        <a href="/" data-sv="Startsidan" data-en="Start page">Startsidan</a>
+        <button id="logout" class="secondary small" hidden data-sv="Logga ut" data-en="Log out">Logga ut</button>
       </div>
     </div>
     <div id="content"></div>
@@ -36,7 +36,7 @@
         data = await api('/api/admin/overview');
       } catch (e) {
         document.getElementById('logout').hidden = true;
-        if (e.status === 401) pinLogin(el, { title: 'Admin', hint: 'Ställen och menyer.', url: '/api/admin/login', onOk: init });
+        if (e.status === 401) pinLogin(el, { title: 'Admin', hint: L('Ställen, menyer och alla rundor.', 'Places, menus and all rounds.'), url: '/api/admin/login', onOk: init });
         else el.innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p></div>`;
         return;
       }
@@ -57,18 +57,18 @@
     function renderCompanies() {
       document.getElementById('companies').innerHTML = `
         <div class="card">
-          <h2>Företag</h2>
-          <p class="muted" style="margin-top:0">Delar flera bolag hus, t.ex. i ett kontorshotell? Lägg in företagen. Den som startar en runda väljer
-            sitt företag eller "Alla i huset", och startsidan får en företagsväljare. Det är ett filter, inte en spärr – "Alla företag" visar allt.</p>
+          <h2>${L('Företag', 'Companies')}</h2>
+          <p class="muted" style="margin-top:0">${L('Delar flera bolag hus, t.ex. i ett kontorshotell? Lägg in företagen. Den som startar en runda väljer sitt företag eller "Alla i huset", och startsidan får en företagsväljare. Det är ett filter, inte en spärr – "Alla företag" visar allt.',
+            'Several companies in one building, e.g. an office hotel? Add the companies. Whoever starts a round picks their company or "Everyone in the building", and the start page gets a company picker. It is a filter, not a lock – "All companies" shows everything.')}</p>
           <form id="addComp" class="row">
-            <div><label for="cName">Nytt företag</label><input id="cName" type="text" required maxlength="50" placeholder="T.ex. Acme AB" /></div>
-            <button type="submit">Lägg till</button>
+            <div><label for="cName">${L('Nytt företag', 'New company')}</label><input id="cName" type="text" required maxlength="50" placeholder="${L('T.ex. Acme AB', 'E.g. Acme Ltd')}" /></div>
+            <button type="submit">${L('Lägg till', 'Add')}</button>
           </form>
           ${data.companies.length ? `<table><tbody>${data.companies.map((c) => `
             <tr><td>🏢 ${esc(c.name)}</td>
-              <td class="muted">${data.rounds.filter((r) => r.companyId === c.id).length} pågående rundor</td>
-              <td class="r" style="white-space:nowrap"><button class="secondary small" data-comp-rename="${c.id}">Byt namn</button>
-                <button class="danger small" data-comp-del="${c.id}">Ta bort</button></td></tr>`).join('')}</tbody></table>` : ''}
+              <td class="muted">${data.rounds.filter((r) => r.companyId === c.id).length} ${L('pågående rundor', 'ongoing rounds')}</td>
+              <td class="r" style="white-space:nowrap"><button class="secondary small" data-comp-rename="${c.id}">${L('Byt namn', 'Rename')}</button>
+                <button class="danger small" data-comp-del="${c.id}">${L('Ta bort', 'Delete')}</button></td></tr>`).join('')}</tbody></table>` : ''}
         </div>`;
       document.getElementById('addComp').onsubmit = act(async (e) => {
         e.preventDefault();
@@ -82,18 +82,18 @@
     function renderLocations() {
       document.getElementById('locations').innerHTML = `
         <div class="card">
-          <h2>Orter</h2>
-          <p class="muted" style="margin-top:0">Har ni flera kontor? Lägg in orterna och koppla varje ställe till en ort.
-            Startsidan får då en ortväljare. Ställen utan ort syns överallt. Inga orter = ingen ortväljare.</p>
+          <h2>${L('Orter', 'Locations')}</h2>
+          <p class="muted" style="margin-top:0">${L('Har ni flera kontor? Lägg in orterna och koppla varje ställe till en ort. Startsidan får då en ortväljare. Ställen utan ort syns överallt. Inga orter = ingen ortväljare.',
+            'Several offices? Add the locations and link each place to one. The start page then gets a location picker. Places without a location show everywhere. No locations = no picker.')}</p>
           <form id="addLoc" class="row">
-            <div><label for="lName">Ny ort</label><input id="lName" type="text" required maxlength="40" placeholder="T.ex. Göteborg" /></div>
-            <button type="submit">Lägg till</button>
+            <div><label for="lName">${L('Ny ort', 'New location')}</label><input id="lName" type="text" required maxlength="40" placeholder="${L('T.ex. Göteborg', 'E.g. Gothenburg')}" /></div>
+            <button type="submit">${L('Lägg till', 'Add')}</button>
           </form>
           ${data.locations.length ? `<table><tbody>${data.locations.map((l) => `
             <tr><td>📍 ${esc(l.name)}</td>
-              <td class="muted">${data.places.filter((p) => p.location_id === l.id).length} ställen</td>
-              <td class="r" style="white-space:nowrap"><button class="secondary small" data-loc-rename="${l.id}">Byt namn</button>
-                <button class="danger small" data-loc-del="${l.id}">Ta bort</button></td></tr>`).join('')}</tbody></table>` : ''}
+              <td class="muted">${data.places.filter((p) => p.location_id === l.id).length} ${L('ställen', 'places')}</td>
+              <td class="r" style="white-space:nowrap"><button class="secondary small" data-loc-rename="${l.id}">${L('Byt namn', 'Rename')}</button>
+                <button class="danger small" data-loc-del="${l.id}">${L('Ta bort', 'Delete')}</button></td></tr>`).join('')}</tbody></table>` : ''}
         </div>`;
       document.getElementById('addLoc').onsubmit = act(async (e) => {
         e.preventDefault();
@@ -108,75 +108,117 @@
         <tr>
           <td><a href="/r/${esc(r.slug)}" style="font-weight:700">${esc(r.title)}</a><div class="muted" style="font-size:.8rem">${[r.name ? esc(r.placeName) : '', r.locationName ? '📍 ' + esc(r.locationName) : '', r.companyName ? '🏢 ' + esc(r.companyName) : ''].filter(Boolean).join(' · ')}</div></td>
           <td>${esc(r.creatorName)}<div class="muted" style="font-size:.8rem">${esc(r.creatorEmail)}</div></td>
-          <td><span class="badge ${r.isOpen ? 'open' : 'closed'}">${r.isOpen ? 'Öppen' : 'Stängd'}</span>
-            ${r.isOpen && r.closeAt ? `<div class="muted" style="font-size:.8rem">stänger ${esc(whenShort(r.closeAt))}</div>` : ''}</td>
+          <td><span class="badge ${r.isOpen ? 'open' : 'closed'}">${r.isOpen ? L('Öppen', 'Open') : L('Stängd', 'Closed')}</span>
+            ${r.isOpen && r.closeAt ? `<div class="muted" style="font-size:.8rem">${L('stänger', 'closes')} ${esc(whenShort(r.closeAt))}</div>` : ''}</td>
           <td class="r">${r.orderCount}</td>
           <td><code>${esc(r.pin)}</code></td>
-          <td style="font-size:.85rem">${esc(dayWord(r.eventDate))}<div class="muted" style="font-size:.75rem">skapad ${new Date(r.createdAt).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })}</div></td>
+          <td style="font-size:.85rem">${esc(dayWord(r.eventDate))}<div class="muted" style="font-size:.75rem">${L('skapad', 'created')} ${new Date(r.createdAt).toLocaleString(LOCALE, { dateStyle: 'short', timeStyle: 'short' })}</div></td>
           <td class="r" style="white-space:nowrap">
-            <a href="/r/${esc(r.slug)}/admin" class="muted" style="margin-right:8px">Hantera</a>
-            <button class="danger small" data-end-round="${r.id}" data-title="${esc(r.title)}" data-count="${r.orderCount}">Avsluta</button></td>
+            <a href="/r/${esc(r.slug)}/admin" class="muted" style="margin-right:8px">${L('Hantera', 'Manage')}</a>
+            <button class="danger small" data-end-round="${r.id}" data-title="${esc(r.title)}" data-count="${r.orderCount}">${L('Avsluta', 'End')}</button></td>
         </tr>`).join('');
       document.getElementById('rounds').innerHTML = `
         <div class="card">
-          <h2>Pågående rundor <span class="muted">(${data.rounds.length})</span></h2>
+          <h2>${L('Pågående rundor', 'Ongoing rounds')} <span class="muted">(${data.rounds.length})</span></h2>
           ${data.rounds.length ? `<div class="table-scroll"><table>
-            <thead><tr><th>Runda</th><th>Skapad av</th><th>Status</th><th class="r">Best.</th><th>PIN</th><th>Datum</th><th></th></tr></thead>
-            <tbody>${rows}</tbody></table></div>` : '<p class="muted">Inga rundor just nu.</p>'}
+            <thead><tr><th>${L('Runda', 'Round')}</th><th>${L('Skapad av', 'Created by')}</th><th>Status</th><th class="r">${L('Best.', 'Orders')}</th><th>PIN</th><th>${L('Datum', 'Date')}</th><th></th></tr></thead>
+            <tbody>${rows}</tbody></table></div>` : `<p class="muted">${L('Inga rundor just nu.', 'No rounds right now.')}</p>`}
         </div>`;
     }
 
     // ---------- Places & menus ----------
+    let openOpt = null; // option whose "applies to" panel is open
     function renderPlaces() {
       if (selectedPlace === null || !data.places.some((p) => p.id === selectedPlace)) selectedPlace = data.places[0]?.id ?? null;
+      const cur = data.places.find((p) => p.id === selectedPlace);
       const placeOpts = data.places.map((p) => `<option value="${p.id}" ${p.id === selectedPlace ? 'selected' : ''}>${esc(p.name)}${p.location_id ? ` – ${esc(locName(p.location_id))}` : ''}</option>`).join('');
-      const menu = data.menuItems.filter((m) => m.place_id === selectedPlace);
+      const items = data.menuItems.filter((m) => m.place_id === selectedPlace);
+      const mains = items.filter((m) => m.category !== 'drink');
+      const drinks = items.filter((m) => m.category === 'drink');
       const opts = data.options.filter((o) => o.place_id === selectedPlace);
+      const itemRow = (m) => `<tr><td>${esc(m.name)}</td><td class="r">${m.price} kr</td>
+        <td class="r" style="white-space:nowrap"><button class="secondary small" data-edit-menu="${m.id}" title="${L('Ändra', 'Edit')}">✎</button>
+        <button class="danger small" data-del-menu="${m.id}">✕</button></td></tr>`;
+      const applies = (o) => !o.applies_to ? L('Alla rätter', 'All dishes')
+        : o.applies_to.length === 1 ? esc((mains.find((m) => m.id === o.applies_to[0]) || {}).name || '1')
+        : `${o.applies_to.length} ${L('rätter', 'dishes')}`;
 
       document.getElementById('places').innerHTML = `
         <div class="card">
-          <h2>Ställen &amp; menyer</h2>
+          <h2>${L('Ställen &amp; menyer', 'Places &amp; menus')}</h2>
           <form id="addPlace" class="row">
-            <div><label for="pName">Nytt ställe</label><input id="pName" type="text" required maxlength="60" placeholder="T.ex. Pizzeria Palma" /></div>
-            <button type="submit">Lägg till</button>
+            <div><label for="pName">${L('Nytt ställe', 'New place')}</label><input id="pName" type="text" required maxlength="60" placeholder="${L('T.ex. Pizzeria Palma', 'E.g. Pizzeria Palma')}" /></div>
+            <button type="submit">${L('Lägg till', 'Add')}</button>
           </form>
-          ${!data.places.length ? '' : `
+          ${!cur ? '' : `
           <div class="row" style="margin-top:18px">
-            <div><label for="editPlace">Redigera ställe</label><select id="editPlace">${placeOpts}</select></div>
-            ${data.locations.length ? `<div style="max-width:220px"><label for="placeLoc">Ort</label><select id="placeLoc">
-              <option value="">Alla orter</option>
-              ${data.locations.map((l) => `<option value="${l.id}" ${data.places.find((p) => p.id === selectedPlace)?.location_id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
+            <div><label for="editPlace">${L('Redigera ställe', 'Edit place')}</label><select id="editPlace">${placeOpts}</select></div>
+            ${data.locations.length ? `<div style="max-width:220px"><label for="placeLoc">${L('Ort', 'Location')}</label><select id="placeLoc">
+              <option value="">${L('Alla orter', 'All locations')}</option>
+              ${data.locations.map((l) => `<option value="${l.id}" ${cur.location_id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
             </select></div>` : ''}
-            <button class="secondary" id="renamePlace">Byt namn</button>
-            <button class="danger" id="delPlace">Ta bort</button>
+            <button class="secondary" id="renamePlace">${L('Byt namn', 'Rename')}</button>
+            <button class="danger" id="delPlace">${L('Ta bort', 'Delete')}</button>
           </div>
+
+          <details style="margin-top:14px" ${cur.phone || cur.address || cur.url || cur.note ? '' : ''}>
+            <summary class="muted">${L('Kontaktuppgifter', 'Contact details')} ${cur.phone || cur.url ? '✓' : ''}</summary>
+            <form id="contactForm">
+              <div class="grid-form">
+                <div><label for="cPhone">${L('Telefon', 'Phone')}</label><input id="cPhone" type="tel" maxlength="40" value="${esc(cur.phone)}" /></div>
+                <div><label for="cUrl">${L('Länk till menyn', 'Link to the menu')}</label><input id="cUrl" type="text" maxlength="300" placeholder="https://…" value="${esc(cur.url)}" /></div>
+              </div>
+              <label for="cAddr">${L('Adress', 'Address')}</label><input id="cAddr" type="text" maxlength="120" value="${esc(cur.address)}" />
+              <label for="cNote">${L('Notering', 'Note')}</label><input id="cNote" type="text" maxlength="200" placeholder="${L('T.ex. Beställ via hemsidan, ange kod LUNCH10', 'E.g. Order on the website, use code LUNCH10')}" value="${esc(cur.note)}" />
+              <p class="muted" style="font-size:.82rem;margin:6px 0 0">${L('Visas för den som startar och hanterar en runda, och länken till menyn även för de som beställer.', 'Shown to whoever starts and manages a round.')}</p>
+              <button type="submit" class="secondary" style="margin-top:10px">${L('Spara', 'Save')}</button>
+            </form>
+          </details>
+
+          <details style="margin-top:10px" id="pasteBox">
+            <summary class="muted">${L('Klistra in en meny', 'Paste a menu')}</summary>
+            <p class="muted" style="font-size:.85rem;margin:8px 0">${L('En rad per sak, priset sist: <code>Vesuvio 115</code>. Rubriker byter avdelning: <code>[Rätter]</code> <code>[Dricka]</code> <code>[Tillval]</code> <code>[Bortval]</code>. Utan rubrik: <code>+Extra ost 15</code> = tillval, <code>-Utan lök</code> = bortval.',
+              'One line per item, price last: <code>Vesuvio 115</code>. Headings switch section: <code>[Dishes]</code> <code>[Drinks]</code> <code>[Add-ons]</code> <code>[Remove]</code>. Without a heading: <code>+Extra cheese 15</code> = add-on, <code>-No onion</code> = removal.')}</p>
+            <textarea id="pasteText" rows="8" placeholder="Vesuvio 115&#10;Capricciosa 125&#10;+Extra ost 15&#10;-Utan lök&#10;[${L('Dricka', 'Drinks')}]&#10;Coca-Cola 25"></textarea>
+            <label class="check"><input type="checkbox" id="pasteReplace" /><span>${L('Ersätt nuvarande meny för stället', "Replace the place's current menu")}</span></label>
+            <div class="row" style="margin-top:10px"><button type="button" class="secondary" id="pastePreview" style="flex:0 0 auto">${L('Förhandsgranska', 'Preview')}</button>
+              <button type="button" id="pasteImport" style="flex:0 0 auto" disabled>${L('Importera', 'Import')}</button></div>
+            <div id="pasteOut"></div>
+          </details>
+
           <div class="grid-2" style="margin-top:12px">
             <div>
-              <h2 style="margin-top:12px">Produkter</h2>
+              <h2 style="margin-top:12px">${L('Produkter', 'Products')}</h2>
               <form id="addMenu" class="row">
-                <div><label for="mName">Produkt</label><input id="mName" type="text" required maxlength="80" placeholder="Vesuvio" /></div>
-                <div style="max-width:110px;min-width:90px"><label for="mPrice">Pris kr</label><input id="mPrice" type="number" min="0" required placeholder="115" /></div>
+                <div style="max-width:120px;min-width:100px"><label for="mCat">${L('Typ', 'Type')}</label>
+                  <select id="mCat"><option value="main">${L('Rätt', 'Dish')}</option><option value="drink">${L('Dricka', 'Drink')}</option></select></div>
+                <div><label for="mName">${L('Namn', 'Name')}</label><input id="mName" type="text" required maxlength="80" placeholder="Vesuvio" /></div>
+                <div style="max-width:100px;min-width:80px"><label for="mPrice">${L('Pris kr', 'Price kr')}</label><input id="mPrice" type="number" min="0" required placeholder="115" /></div>
                 <button type="submit">+</button>
               </form>
               <table><tbody>
-                ${menu.map((m) => `<tr><td>${esc(m.name)}</td><td class="r">${m.price} kr</td>
-                  <td class="r" style="white-space:nowrap"><button class="secondary small" data-edit-menu="${m.id}">✎</button>
-                  <button class="danger small" data-del-menu="${m.id}">✕</button></td></tr>`).join('') || '<tr><td class="muted">Inga produkter – stället syns inte förrän det har minst en.</td></tr>'}
+                ${mains.map(itemRow).join('') || `<tr><td class="muted">${L('Inga rätter – stället syns inte förrän det har minst en.', 'No dishes – the place is hidden until it has at least one.')}</td></tr>`}
               </tbody></table>
+              ${drinks.length ? `<h3 class="drink-head">${L('Dricka', 'Drinks')}</h3><table><tbody>${drinks.map(itemRow).join('')}</tbody></table>` : ''}
             </div>
             <div>
-              <h2 style="margin-top:12px">Tillval &amp; bortval</h2>
+              <h2 style="margin-top:12px">${L('Tillval &amp; bortval', 'Add-ons &amp; removals')}</h2>
               <form id="addOpt" class="row">
-                <div style="max-width:120px;min-width:100px"><label for="oKind">Typ</label>
-                  <select id="oKind"><option value="addon">Tillval</option><option value="removal">Bortval</option></select></div>
-                <div><label for="oName">Namn</label><input id="oName" type="text" required maxlength="60" placeholder="Extra ost / Utan lök" /></div>
-                <div style="max-width:90px;min-width:80px"><label for="oPrice">Pris</label><input id="oPrice" type="number" min="0" value="0" /></div>
+                <div style="max-width:120px;min-width:100px"><label for="oKind">${L('Typ', 'Type')}</label>
+                  <select id="oKind"><option value="addon">${L('Tillval', 'Add-on')}</option><option value="removal">${L('Bortval', 'Removal')}</option></select></div>
+                <div><label for="oName">${L('Namn', 'Name')}</label><input id="oName" type="text" required maxlength="60" placeholder="${L('Extra ost / Utan lök', 'Extra cheese / No onion')}" /></div>
+                <div style="max-width:90px;min-width:80px"><label for="oPrice">${L('Pris', 'Price')}</label><input id="oPrice" type="number" min="0" value="0" /></div>
                 <button type="submit">+</button>
               </form>
               <table><tbody>
-                ${opts.map((o) => `<tr><td>${o.kind === 'addon' ? 'Tillval' : 'Bortval'}</td><td>${esc(o.name)}</td>
+                ${opts.map((o) => `<tr><td>${o.kind === 'addon' ? L('Tillval', 'Add-on') : L('Bortval', 'Removal')}</td><td>${esc(o.name)}</td>
                   <td class="r">${o.kind === 'addon' ? (o.price ? '+' + o.price + ' kr' : '0 kr') : ''}</td>
-                  <td class="r"><button class="danger small" data-del-opt="${o.id}">✕</button></td></tr>`).join('') || '<tr><td class="muted">Inga tillval/bortval.</td></tr>'}
+                  <td><button class="secondary small" data-applies="${o.id}" title="${L('Vilka rätter gäller det?', 'Which dishes does it apply to?')}">${applies(o)} ▾</button></td>
+                  <td class="r"><button class="danger small" data-del-opt="${o.id}">✕</button></td></tr>
+                  ${openOpt === o.id ? `<tr><td colspan="5"><div class="applies-box">
+                    <div class="muted" style="font-size:.85rem;margin-bottom:6px">${L(`"${esc(o.name)}" gäller (ingen ikryssad = alla rätter):`, `"${esc(o.name)}" applies to (none ticked = all dishes):`)}</div>
+                    ${mains.map((m) => `<label class="check" style="margin:2px 12px 2px 0;display:inline-flex"><input type="checkbox" class="ap" value="${m.id}" ${(o.applies_to || []).includes(m.id) ? 'checked' : ''} /><span>${esc(m.name)}</span></label>`).join('')}
+                    <div style="margin-top:8px"><button type="button" class="small" data-applies-save="${o.id}">${L('Spara', 'Save')}</button></div></div></td></tr>` : ''}`).join('') || `<tr><td class="muted">${L('Inga tillval/bortval.', 'No add-ons/removals.')}</td></tr>`}
               </tbody></table>
             </div>
           </div>`}
@@ -189,30 +231,51 @@
         selectedPlace = r.id;
         await reload();
       });
-      if (!data.places.length) return;
-      $('editPlace').onchange = () => { selectedPlace = Number($('editPlace').value); renderPlaces(); };
+      if (!cur) return;
+      $('editPlace').onchange = () => { selectedPlace = Number($('editPlace').value); openOpt = null; renderPlaces(); };
       if ($('placeLoc')) $('placeLoc').onchange = act(async () => {
         await api(`/api/admin/places/${selectedPlace}`, 'PATCH', { locationId: $('placeLoc').value ? Number($('placeLoc').value) : null });
         await reload();
       });
       $('renamePlace').onclick = act(async () => {
-        const cur = data.places.find((p) => p.id === selectedPlace);
-        const name = prompt('Nytt namn', cur.name);
+        const name = prompt(L('Nytt namn', 'New name'), cur.name);
         if (!name || name === cur.name) return;
         await api(`/api/admin/places/${selectedPlace}`, 'PATCH', { name });
         await reload();
       });
       $('delPlace').onclick = act(async () => {
-        const cur = data.places.find((p) => p.id === selectedPlace);
-        if (!confirm(`Ta bort "${cur.name}" med hela menyn?`)) return;
+        if (!confirm(L(`Ta bort "${cur.name}" med hela menyn?`, `Delete "${cur.name}" with its whole menu?`))) return;
         await api(`/api/admin/places/${selectedPlace}`, 'DELETE');
         selectedPlace = null;
         await reload();
       });
+      $('contactForm').onsubmit = act(async (e) => {
+        e.preventDefault();
+        await api(`/api/admin/places/${selectedPlace}`, 'PATCH', { phone: $('cPhone').value, url: $('cUrl').value, address: $('cAddr').value, note: $('cNote').value });
+        await reload();
+      });
+      // Paste a menu: preview first, then import
+      const pasteBody = () => ({ text: $('pasteText').value, replace: $('pasteReplace').checked });
+      $('pastePreview').onclick = act(async () => {
+        const r = await api(`/api/admin/places/${selectedPlace}/import`, 'POST', { ...pasteBody(), dryRun: true });
+        const list = (k, title) => r[k].length ? `<div><strong>${title} (${r[k].length})</strong>: ${r[k].map((x) => esc(x.name) + (k === 'removal' ? '' : ` ${x.price} kr`)).join(', ')}</div>` : '';
+        $('pasteOut').innerHTML = `<div class="editbox">${list('main', L('Rätter', 'Dishes'))}${list('drink', L('Dricka', 'Drinks'))}${list('addon', L('Tillval', 'Add-ons'))}${list('removal', L('Bortval', 'Removals'))}
+          ${r.skipped.length ? `<div class="muted">${L('Hoppas över (inget pris)', 'Skipped (no price)')}: ${r.skipped.map(esc).join(' · ')}</div>` : ''}
+          ${$('pasteReplace').checked ? `<div style="color:var(--coral);margin-top:6px">${L('Den nuvarande menyn tas bort.', 'The current menu will be removed.')}</div>` : ''}</div>`;
+        $('pasteImport').disabled = !(r.main.length + r.drink.length + r.addon.length + r.removal.length);
+      });
+      $('pasteImport').onclick = act(async () => {
+        const r = await api(`/api/admin/places/${selectedPlace}/import`, 'POST', pasteBody());
+        alert(L(`Importerat: ${r.main.length} rätter, ${r.drink.length} dricka, ${r.addon.length} tillval, ${r.removal.length} bortval.`,
+          `Imported: ${r.main.length} dishes, ${r.drink.length} drinks, ${r.addon.length} add-ons, ${r.removal.length} removals.`));
+        await reload();
+      });
       $('addMenu').onsubmit = act(async (e) => {
         e.preventDefault();
-        await api('/api/admin/menu', 'POST', { placeId: selectedPlace, name: $('mName').value, price: Number($('mPrice').value) });
+        const cat = $('mCat').value;
+        await api('/api/admin/menu', 'POST', { placeId: selectedPlace, name: $('mName').value, price: Number($('mPrice').value), category: cat });
         await reload();
+        $('mCat').value = cat;
         $('mName').focus();
       });
       $('addOpt').onsubmit = act(async (e) => {
@@ -227,66 +290,68 @@
 
     // ---------- Webhooks ----------
     let hooks = null;
-    const EVENT_NAMES = { 'round.created': 'Ny runda', 'round.closed': 'Runda stängd', 'food.arrived': 'Maten är här' };
+    const EVENT_NAMES = { 'round.created': L('Ny runda', 'New round'), 'round.closed': L('Runda stängd', 'Round closed'), 'food.arrived': L('Maten är här', 'Food is here') };
     const FORMAT_NAMES = { teams: 'Teams (Workflows)', slack: 'Slack', discord: 'Discord', json: 'JSON' };
     async function renderHooks() {
       if (!hooks) hooks = await api('/api/admin/webhooks');
       const rows = hooks.hooks.map((h, i) => `
         <div class="hook" data-i="${i}">
           <div class="row">
-            <div style="flex:3"><label>Adress</label><input type="text" class="h-url" value="${esc(h.url)}" placeholder="https://…" /></div>
+            <div style="flex:3"><label>${L('Adress', 'URL')}</label><input type="text" class="h-url" value="${esc(h.url)}" placeholder="https://…" /></div>
             <div style="max-width:190px"><label>Format</label><select class="h-format">
               ${hooks.formats.map((f) => `<option value="${f}" ${f === h.format ? 'selected' : ''}>${FORMAT_NAMES[f] || f}</option>`).join('')}</select></div>
+            <div style="max-width:120px;min-width:90px"><label>${L('Språk', 'Language')}</label><select class="h-lang">
+              <option value="sv" ${h.lang !== 'en' ? 'selected' : ''}>Svenska</option><option value="en" ${h.lang === 'en' ? 'selected' : ''}>English</option></select></div>
           </div>
           <div class="row" style="margin-top:8px;align-items:center">
             ${hooks.events.map((ev) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-ev" value="${ev}" ${!h.events || h.events.includes(ev) ? 'checked' : ''} /><span>${EVENT_NAMES[ev] || ev}</span></label>`).join('')}
           </div>
           ${hooks.locations.length ? `<div class="row" style="margin-top:6px;align-items:center">
-            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.85rem">Bara orter:</span>
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.85rem">${L('Bara orter', 'Only locations')}:</span>
             ${hooks.locations.map((l) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-loc" value="${l.id}" ${(h.locations || []).includes(l.id) ? 'checked' : ''} /><span>${esc(l.name)}</span></label>`).join('')}
-            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(ingen vald = alla)</span>
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(${L('ingen vald = alla', 'none = all')})</span>
           </div>` : ''}
           ${hooks.companies.length ? `<div class="row" style="margin-top:6px;align-items:center">
-            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.85rem">Bara företag:</span>
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.85rem">${L('Bara företag', 'Only companies')}:</span>
             ${hooks.companies.map((c) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-comp" value="${c.id}" ${(h.companies || []).includes(c.id) ? 'checked' : ''} /><span>${esc(c.name)}</span></label>`).join('')}
-            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(ingen vald = alla)</span>
+            <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(${L('ingen vald = alla', 'none = all')})</span>
           </div>` : ''}
           <div class="row" style="margin-top:8px;align-items:center">
             <span style="flex:1"></span>
-            <button type="button" class="secondary small" data-hook-test="${i}" style="flex:0 0 auto">Testa</button>
-            <button type="button" class="danger small" data-hook-del="${i}" style="flex:0 0 auto">Ta bort</button>
+            <button type="button" class="secondary small" data-hook-test="${i}" style="flex:0 0 auto">${L('Testa', 'Test')}</button>
+            <button type="button" class="danger small" data-hook-del="${i}" style="flex:0 0 auto">${L('Ta bort', 'Delete')}</button>
           </div>
         </div>`).join('');
       document.getElementById('hooks').innerHTML = `
         <div class="card">
           <h2>Webhooks</h2>
-          <p class="muted" style="margin-top:0">Skicka ett meddelande till en kanal när en runda startar, stängs eller maten är här.
-            <strong>Teams</strong>: i kanalen, välj <em>Workflows</em> → <em>Post to a channel when a webhook request is received</em> och klistra in adressen här – ingen Entra-admin behövs.
-            <strong>Slack/Discord</strong>: inkommande webhook. <strong>JSON</strong>: valfri tjänst, t.ex. Power Automate eller n8n.</p>
-          ${rows || '<p class="muted">Inga webhooks.</p>'}
+          <p class="muted" style="margin-top:0">${L('Skicka ett meddelande till en kanal när en runda startar, stängs eller maten är här. <strong>Teams</strong>: i kanalen, välj <em>Workflows</em> → <em>Post to a channel when a webhook request is received</em> och klistra in adressen här – ingen Entra-admin behövs. <strong>Slack/Discord</strong>: inkommande webhook. <strong>JSON</strong>: valfri tjänst, t.ex. Power Automate eller n8n.',
+            'Post a message to a channel when a round starts, closes or the food arrives. <strong>Teams</strong>: in the channel, choose <em>Workflows</em> → <em>Post to a channel when a webhook request is received</em> and paste the URL here – no Entra admin needed. <strong>Slack/Discord</strong>: incoming webhook. <strong>JSON</strong>: any service, e.g. Power Automate or n8n.')}</p>
+          ${rows || `<p class="muted">${L('Inga webhooks.', 'No webhooks.')}</p>`}
           <div class="row" style="margin-top:14px">
-            <button type="button" class="secondary" id="hookAdd" style="flex:0 0 auto">+ Lägg till</button>
-            <button type="button" id="hookSave" style="flex:0 0 auto">Spara</button>
+            <button type="button" class="secondary" id="hookAdd" style="flex:0 0 auto">+ ${L('Lägg till', 'Add')}</button>
+            <button type="button" id="hookSave" style="flex:0 0 auto">${L('Spara', 'Save')}</button>
           </div>
         </div>`;
       const collect = () => [...document.querySelectorAll('.hook')].map((d) => ({
         url: d.querySelector('.h-url').value.trim(),
         format: d.querySelector('.h-format').value,
+        lang: d.querySelector('.h-lang').value,
         events: [...d.querySelectorAll('.h-ev:checked')].map((c) => c.value),
         locations: [...d.querySelectorAll('.h-loc:checked')].map((c) => Number(c.value)),
         companies: [...d.querySelectorAll('.h-comp:checked')].map((c) => Number(c.value))
       }));
-      document.getElementById('hookAdd').onclick = () => { hooks.hooks = [...collect(), { url: '', format: 'teams', events: hooks.events }]; renderHooks(); };
+      document.getElementById('hookAdd').onclick = () => { hooks.hooks = [...collect(), { url: '', format: 'teams', lang: LANG, events: hooks.events }]; renderHooks(); };
       document.getElementById('hookSave').onclick = act(async () => {
         const r = await api('/api/admin/webhooks', 'PUT', { hooks: collect().filter((h) => h.url) });
-        hooks.hooks = r.hooks; renderHooks(); alert('Sparat.');
+        hooks.hooks = r.hooks; renderHooks(); alert(L('Sparat.', 'Saved.'));
       });
       document.querySelectorAll('[data-hook-del]').forEach((b) => { b.onclick = () => { const l = collect(); l.splice(Number(b.dataset.hookDel), 1); hooks.hooks = l; renderHooks(); }; });
       document.querySelectorAll('[data-hook-test]').forEach((b) => {
         b.onclick = act(async () => {
           const h = collect()[Number(b.dataset.hookTest)];
-          await api('/api/admin/webhooks/test', 'POST', { url: h.url, format: h.format });
-          alert('Testmeddelande skickat.');
+          await api('/api/admin/webhooks/test', 'POST', { url: h.url, format: h.format, lang: h.lang });
+          alert(L('Testmeddelande skickat.', 'Test message sent.'));
         });
       });
     }
@@ -294,16 +359,16 @@
     function renderMailTest() {
       document.getElementById('mailtest').innerHTML = `
         <div class="card">
-          <h2>Mejl</h2>
+          <h2>${L('Mejl', 'Mail')}</h2>
           ${data.mailConfigured ? `
-            <div class="row"><div><label for="testTo">Skicka testmejl till</label><input id="testTo" type="email" placeholder="din@adress.se" /></div>
-            <button class="secondary" id="mailTest">Skicka test</button></div>`
-          : '<p class="muted">Inte konfigurerat – lägg in SMTP_* och MAIL_FROM i sammat.env.</p>'}
+            <div class="row"><div><label for="testTo">${L('Skicka testmejl till', 'Send a test mail to')}</label><input id="testTo" type="email" placeholder="${L('din@adress.se', 'you@example.com')}" /></div>
+            <button class="secondary" id="mailTest">${L('Skicka test', 'Send test')}</button></div>`
+          : `<p class="muted">${L('Inte konfigurerat – lägg in SMTP_* och MAIL_FROM i sammat.env.', 'Not configured – set SMTP_* and MAIL_FROM in sammat.env.')}</p>`}
         </div>`;
       const b = document.getElementById('mailTest');
       if (b) b.onclick = act(async () => {
         await api('/api/admin/mail/test', 'POST', { to: document.getElementById('testTo').value.trim() });
-        alert('Testmejl skickat.');
+        alert(L('Testmejl skickat.', 'Test mail sent.'));
       });
     }
 
@@ -312,7 +377,7 @@
       if (!t) return;
       if (t.dataset.compRename) {
         const c = data.companies.find((x) => x.id === Number(t.dataset.compRename));
-        const name = prompt('Nytt namn', c.name);
+        const name = prompt(L('Nytt namn', 'New name'), c.name);
         if (!name || name === c.name) return;
         await api(`/api/admin/companies/${c.id}`, 'PATCH', { name });
         hooks = null; await reload(); renderHooks();
@@ -320,14 +385,14 @@
       }
       if (t.dataset.compDel) {
         const c = data.companies.find((x) => x.id === Number(t.dataset.compDel));
-        if (!confirm(`Ta bort företaget "${c.name}"?\n\nDess rundor ligger kvar och blir "Alla i huset". Webhooks som bara gällde ${c.name} skickar därefter för alla.`)) return;
+        if (!confirm(L(`Ta bort företaget "${c.name}"?\n\nDess rundor ligger kvar och blir "Alla i huset". Webhooks som bara gällde ${c.name} skickar därefter för alla.`, `Delete the company "${c.name}"?\n\nIts rounds stay and become "Everyone in the building". Webhooks only for ${c.name} will send for everyone.`))) return;
         await api(`/api/admin/companies/${c.id}`, 'DELETE');
         hooks = null; await reload(); renderHooks();
         return;
       }
       if (t.dataset.locRename) {
         const l = data.locations.find((x) => x.id === Number(t.dataset.locRename));
-        const name = prompt('Nytt namn', l.name);
+        const name = prompt(L('Nytt namn', 'New name'), l.name);
         if (!name || name === l.name) return;
         await api(`/api/admin/locations/${l.id}`, 'PATCH', { name });
         hooks = null; await reload(); renderHooks();
@@ -335,25 +400,33 @@
       }
       if (t.dataset.locDel) {
         const l = data.locations.find((x) => x.id === Number(t.dataset.locDel));
-        if (!confirm(`Ta bort orten "${l.name}"?\n\nStällena ligger kvar och syns då på alla orter. Webhooks som bara gällde ${l.name} skickar därefter för alla orter.`)) return;
+        if (!confirm(L(`Ta bort orten "${l.name}"?\n\nStällena ligger kvar och syns då på alla orter. Webhooks som bara gällde ${l.name} skickar därefter för alla orter.`, `Delete the location "${l.name}"?\n\nIts places stay and show at all locations. Webhooks only for ${l.name} will send for all locations.`))) return;
         await api(`/api/admin/locations/${l.id}`, 'DELETE');
         hooks = null; await reload(); renderHooks();
         return;
       }
       if (t.dataset.endRound) {
-        if (!confirm(`Avsluta "${t.dataset.title}"? ${t.dataset.count} beställningar raderas permanent.`)) return;
+        if (!confirm(L(`Avsluta "${t.dataset.title}"? ${t.dataset.count} beställningar raderas permanent.`, `End "${t.dataset.title}"? ${t.dataset.count} orders are deleted permanently.`))) return;
         await api(`/api/admin/rounds/${t.dataset.endRound}/end`, 'POST', {});
         await reload();
       } else if (t.dataset.editMenu) {
         const m = data.menuItems.find((x) => x.id === Number(t.dataset.editMenu));
-        const name = prompt('Produkt', m.name);
+        const name = prompt(L('Namn', 'Name'), m.name);
         if (name === null) return;
-        const price = prompt('Pris (kr)', m.price);
+        const price = prompt(L('Pris (kr)', 'Price (kr)'), m.price);
         if (price === null) return;
         await api(`/api/admin/menu/${m.id}`, 'PATCH', { name, price: Number(price) });
         await reload();
       } else if (t.dataset.delMenu) {
         await api(`/api/admin/menu/${t.dataset.delMenu}`, 'DELETE'); await reload();
+      } else if (t.dataset.applies) {
+        openOpt = openOpt === Number(t.dataset.applies) ? null : Number(t.dataset.applies);
+        renderPlaces();
+      } else if (t.dataset.appliesSave) {
+        const ids = [...t.closest('.applies-box').querySelectorAll('.ap:checked')].map((c) => Number(c.value));
+        await api(`/api/admin/options/${t.dataset.appliesSave}`, 'PATCH', { appliesTo: ids });
+        openOpt = null;
+        await reload();
       } else if (t.dataset.delOpt) {
         await api(`/api/admin/options/${t.dataset.delOpt}`, 'DELETE'); await reload();
       }

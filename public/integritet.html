@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SamMat – Integritet</title>
+  <title>SamMat</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
@@ -14,57 +14,76 @@
 </head>
 <body>
   <div class="wrap narrow">
-    <div class="topbar"><a href="/" class="logo">SamMat</a><a href="/">← Startsidan</a></div>
-    <div class="card prose">
+    <div class="topbar"><a href="/" class="logo">SamMat</a><a href="/" data-sv="← Startsidan" data-en="← Start page">← Startsidan</a></div>
+    <div class="card prose" id="app"></div>
+  </div>
+  <script>
+    function render(i) {
+      const sv = `
       <h1>Vad sparas?</h1>
-
       <h2>När du beställer</h2>
       <p>Ditt namn, din e-post och vad du beställt sparas i den runda du beställer i. Det används för orderlistan och för mejlen
         (påminnelse, "maten är här" och betalning). Namn och rätt syns som en lapp på beställningssidan för alla med länken.</p>
-      <p>När rundan avslutas raderas allt om den, och rundor raderas automatiskt <span id="purge">7</span> dagar efter sitt datum.
-        Raderingen skriver över datan i databasfilen, så den ligger inte kvar.</p>
-
+      <p>När rundan avslutas raderas allt om den, och rundor raderas automatiskt ${i.purgeDays} dagar efter sitt datum.
+        Raderingen skriver över datan i databasfilen, så den ligger inte kvar.
+        ${i.backupDays ? `Servern tar en säkerhetskopia per dygn som sparas i ${i.backupDays} dagar, så en raderad beställning kan finnas kvar i en kopia så länge.` : ''}</p>
+      <p>Länken för att ändra din beställning fungerar bara för den som har den. Den sparas i din webbläsare så att du hittar den igen.</p>
       <h2>"Kom ihåg min beställning"</h2>
       <p>Bara om du kryssar i rutan. Då sparas, per ställe:</p>
       <ul>
         <li>en <strong>krypterad nyckel</strong> av din e-post (en HMAC – själva adressen sparas inte),</li>
         <li>ditt namn,</li>
-        <li>vad du beställde: rätt, tillval, bortval och det du skrev i "Valfri bortval eller allergier".</li>
+        <li>vad du beställde: rätt, tillval, bortval, dricka och det du skrev i "Valfri bortval eller allergier".</li>
       </ul>
-      <p>Nästa gång du skriver samma e-post <em>och</em> namn hos samma ställe föreslås samma beställning. Det sparas i <span id="fav">180</span> dagar efter
+      <p>Nästa gång du skriver samma e-post <em>och</em> namn hos samma ställe föreslås samma beställning. Det sparas i ${i.favoriteDays} dagar efter
         din senaste beställning. Avkryssar du rutan när du beställer tas det bort för det stället.</p>
-
       <h2>Glöm mig</h2>
-      <p>Ta bort allt som är sparat för "kom ihåg" för din e-post, hos alla ställen:</p>
+      <p>Ta bort allt som är sparat för "kom ihåg" för din e-post, hos alla ställen:</p>`;
+      const en = `
+      <h1>What is stored?</h1>
+      <h2>When you order</h2>
+      <p>Your name, your e-mail and what you ordered are stored in the round you order in. They are used for the order list and the mails
+        (reminder, "the food is here" and payment). Your name and dish show as a note on the order page for everyone with the link.</p>
+      <p>When the round ends, everything about it is deleted, and rounds are deleted automatically ${i.purgeDays} days after their date.
+        The deletion overwrites the data in the database file, so it doesn't linger.
+        ${i.backupDays ? `The server makes one backup a day, kept for ${i.backupDays} days, so a deleted order can remain in a backup that long.` : ''}</p>
+      <p>The link to change your order only works for whoever has it. It is saved in your browser so you can find it again.</p>
+      <h2>"Remember my order"</h2>
+      <p>Only if you tick the box. Then, per place, it stores:</p>
+      <ul>
+        <li>an <strong>encrypted key</strong> of your e-mail (an HMAC – the address itself is not stored),</li>
+        <li>your name,</li>
+        <li>what you ordered: dish, add-ons, removals, drinks and what you wrote under "Other changes or allergies".</li>
+      </ul>
+      <p>Next time you enter the same e-mail <em>and</em> name at the same place, the same order is suggested. It is kept for ${i.favoriteDays} days after
+        your latest order. Unticking the box when you order removes it for that place.</p>
+      <h2>Forget me</h2>
+      <p>Remove everything stored for "remember" for your e-mail, at all places:</p>`;
+      document.getElementById('app').innerHTML = L(sv, en) + `
       <form id="forget" class="row">
-        <div><input id="email" type="email" required placeholder="din@adress.se" autocomplete="email" /></div>
-        <button type="submit" class="danger">Glöm mig</button>
+        <div><input id="email" type="email" required placeholder="${L('din@adress.se', 'you@example.com')}" autocomplete="email" /></div>
+        <button type="submit" class="danger">${L('Glöm mig', 'Forget me')}</button>
       </form>
       <div id="out"></div>
-
-      <h2>Övrigt</h2>
-      <p class="muted">Inga cookies för spårning. En cookie används bara för den som hanterar en runda (inloggning med PIN).
-        Webbläsaren kommer ihåg ditt namn och din e-post lokalt för att fylla i formuläret. Typsnitt och allt annat laddas från den här servern.</p>
-      <p class="muted">SamMat är fri programvara: <a href="https://github.com/lyzio/SamMat">github.com/lyzio/SamMat</a>.</p>
-    </div>
-  </div>
-  <script>
-    api('/api/info').then((i) => {
-      document.getElementById('fav').textContent = i.favoriteDays;
-      document.getElementById('purge').textContent = i.purgeDays;
-    }).catch(() => {});
-    document.getElementById('email').value = store.get('sammat_email');
-    document.getElementById('forget').onsubmit = async (e) => {
-      e.preventDefault();
-      const out = document.getElementById('out');
-      try {
-        const r = await api('/api/forget', 'POST', { email: document.getElementById('email').value.trim() });
-        out.innerHTML = `<p>✓ Klart. ${r.removed ? `${r.removed} sparad${r.removed > 1 ? 'e beställningar' : ' beställning'} borttagen.` : 'Det fanns inget sparat för den adressen.'}</p>`;
-        store.set('sammat_remember', '0');
-      } catch (ex) {
-        out.innerHTML = `<div class="error">${esc(ex.message)}</div>`;
-      }
-    };
+      <h2>${L('Övrigt', 'Other')}</h2>
+      <p class="muted">${L('Inga cookies för spårning. En cookie används bara för den som hanterar en runda (inloggning med PIN). Webbläsaren kommer ihåg ditt namn, din e-post och dina beställningslänkar lokalt. Typsnitt och allt annat laddas från den här servern.',
+        'No tracking cookies. A cookie is only used by whoever manages a round (PIN login). Your browser remembers your name, e-mail and order links locally. Fonts and everything else load from this server.')}</p>
+      <p class="muted">${L('SamMat är fri programvara', 'SamMat is free software')}: <a href="https://github.com/lyzio/SamMat">github.com/lyzio/SamMat</a>.</p>`;
+      document.getElementById('email').value = store.get('sammat_email');
+      document.getElementById('forget').onsubmit = async (e) => {
+        e.preventDefault();
+        const out = document.getElementById('out');
+        try {
+          const r = await api('/api/forget', 'POST', { email: document.getElementById('email').value.trim() });
+          out.innerHTML = `<p>✓ ${r.removed ? L(`Klart. ${r.removed} sparad${r.removed > 1 ? 'e beställningar' : ' beställning'} borttagen.`, `Done. ${r.removed} saved order${r.removed > 1 ? 's' : ''} removed.`)
+            : L('Klart. Det fanns inget sparat för den adressen.', 'Done. Nothing was stored for that address.')}</p>`;
+          store.set('sammat_remember', '0');
+        } catch (ex) {
+          out.innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+        }
+      };
+    }
+    api('/api/info').then(render).catch(() => render({ purgeDays: 7, favoriteDays: 180, backupDays: 7 }));
   </script>
 </body>
 </html>

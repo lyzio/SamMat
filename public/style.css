@@ -229,3 +229,24 @@ tr.cancelled td:last-child, tr.cancelled td:nth-last-child(2) { text-decoration:
 .loc-pick { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; font-size: .9rem; }
 .loc-pick select { width: auto; padding: 6px 30px 6px 10px; font-size: .9rem; }
 .filters { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+/* Language toggle */
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-left: 6px; }
+.lang button { background: transparent; color: var(--muted); padding: 4px 9px; font-size: .75rem; border-radius: 0; font-weight: 700; }
+.lang button.on { background: var(--red); color: #fff; }
+.topbar { align-items: center; }
+/* Drinks with quantity */
+.qty { display: inline-flex; align-items: center; gap: 6px; }
+.qty button { width: 30px; height: 30px; padding: 0; border-radius: 8px; background: var(--card-2); border: 1px solid var(--line); color: var(--text); font-size: 1.05rem; }
+.qty span { min-width: 18px; text-align: center; font-weight: 700; }
+.opt-row.drink { cursor: default; }
+.mine { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: rgba(5, 196, 107, .08); border: 1px dashed var(--green); font-size: .92rem; }
+.mine a { color: var(--green); font-weight: 700; }
+.editbox { margin-top: 14px; padding: 12px; border-radius: 10px; background: var(--bg); border: 1px dashed var(--line); font-size: .9rem; }
+.editbox code { overflow-wrap: anywhere; color: var(--text); }
+.drink-head { font-family: var(--slab); font-size: 1rem; margin: 18px 0 0; color: var(--yellow); }
+@media print { .drink-head { color: #000; } }
+.applies-box { background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; }
+details > summary { padding: 4px 0; }
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.topbar-right > .row { flex: 0 0 auto !important; }
+#locPick .filters { justify-content: flex-start; margin: -4px 0 14px; }

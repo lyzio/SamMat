@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SamMat – Sambeställning</title>
+  <title>SamMat</title>
   <link rel="icon" href="/favicon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="apple-mobile-web-app-title" content="SamMat" />
@@ -14,10 +14,11 @@
 </head>
 <body>
   <div class="wrap narrow">
-    <div class="topbar"><a href="/" class="logo">SamMat</a><div id="locPick"></div></div>
-    <div id="app"><div class="card"><p class="muted">Laddar…</p></div></div>
+    <div class="topbar"><a href="/" class="logo">SamMat</a></div>
+    <div id="locPick"></div>
+    <div id="app"><div class="card"><p class="muted">…</p></div></div>
     <div id="install"></div>
-    <div class="foot"><a href="/integritet">Integritet</a> · <a href="/admin">Admin</a></div>
+    <div class="foot"><a href="/integritet" data-sv="Integritet" data-en="Privacy">Integritet</a> · <a href="/admin">Admin</a></div>
   </div>
 
   <script>
@@ -26,7 +27,7 @@
     async function load(first) {
       let data;
       try { data = await api('/api/rounds'); } catch (e) {
-        appEl.innerHTML = `<div class="card"><h1>Kunde inte ladda</h1><p class="muted">${esc(e.message)}</p></div>`;
+        appEl.innerHTML = `<div class="card"><h1>${L('Kunde inte ladda', 'Could not load')}</h1><p class="muted">${esc(e.message)}</p></div>`;
         return;
       }
       // Location filter (only when locations exist). Rounds at places without a location show everywhere.
@@ -53,25 +54,25 @@
             ${r.name ? `<span>${esc(r.placeName)}</span>` : ''}
             ${locs.length && r.locationName && !sel ? `<span>📍 ${esc(r.locationName)}</span>` : ''}
             ${comps.length && r.companyName && !selC ? `<span>🏢 ${esc(r.companyName)}</span>` : ''}
-            <span>av ${esc(r.creatorName)}</span>
-            <span>${r.orderCount} beställda</span>
+            <span>${L('av', 'by')} ${esc(r.creatorName)}</span>
+            <span>${r.orderCount} ${L('beställda', 'ordered')}</span>
           </div>
           <div class="info">
             ${r.isOpen
-              ? (r.closeAt ? `<span>Beställ senast <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : '<span class="badge open">Öppen</span>')
-              : '<span class="badge closed">Stängd</span>'}
-            ${r.foodEta ? `<span>Mat ca <strong>${esc(r.foodEta)}</strong></span>` : ''}
+              ? (r.closeAt ? `<span>${L('Beställ senast', 'Order by')} <strong>${esc(whenShort(r.closeAt))}</strong> (${until(r.closeAt)})</span>` : `<span class="badge open">${L('Öppen', 'Open')}</span>`)
+              : `<span class="badge closed">${L('Stängd', 'Closed')}</span>`}
+            ${r.foodEta ? `<span>${L('Mat ca', 'Food approx.')} <strong>${esc(r.foodEta)}</strong></span>` : ''}
           </div>
         </a>`;
 
       appEl.innerHTML = rounds.length
-        ? `<h1 style="margin-bottom:14px">${rounds.length > 1 ? 'Pågående sambeställningar' : 'Pågående sambeställning'}</h1>${selName ? `<p class="muted" style="margin:-8px 0 14px">${esc(selName)}</p>` : ''}
+        ? `<h1 style="margin-bottom:14px">${rounds.length > 1 ? L('Pågående sambeställningar', 'Ongoing group orders') : L('Pågående sambeställning', 'Ongoing group order')}</h1>${selName ? `<p class="muted" style="margin:-8px 0 14px">${esc(selName)}</p>` : ''}
            <div class="round-list">${rounds.map(item).join('')}</div>
-           <a class="cta" href="/ny">+ Starta en egen sambeställning</a>`
+           <a class="cta" href="/ny">+ ${L('Starta en egen sambeställning', 'Start your own group order')}</a>`
         : `<div class="card">
-             <h1>Ingen sambeställning just nu</h1>${selName ? `<p class="muted" style="margin-top:-2px">${esc(selName)}</p>` : ''}
-             <p class="muted">Sugen? Starta en – du får en länk att dela och en PIN-kod för att hantera den.</p>
-             <a class="cta" href="/ny">+ Starta en sambeställning</a>
+             <h1>${L('Ingen sambeställning just nu', 'No group order right now')}</h1>${selName ? `<p class="muted" style="margin-top:-2px">${esc(selName)}</p>` : ''}
+             <p class="muted">${L('Sugen? Starta en – du får en länk att dela och en PIN-kod för att hantera den.', 'Hungry? Start one – you get a link to share and a PIN code to manage it.')}</p>
+             <a class="cta" href="/ny">+ ${L('Starta en sambeställning', 'Start a group order')}</a>
            </div>`;
     }
 
@@ -84,7 +85,7 @@
         <option value="">${all}</option>
         ${list.map((x) => `<option value="${x.id}" ${String(x.id) === cur ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}
       </select></label>` : '';
-      el.innerHTML = `<div class="filters">${pick('loc', '📍', 'Ort', 'Alla orter', locs, sel)}${pick('comp', '🏢', 'Företag', 'Alla företag', comps, selC)}</div>`;
+      el.innerHTML = `<div class="filters">${pick('loc', '📍', L('Ort', 'Location'), L('Alla orter', 'All locations'), locs, sel)}${pick('comp', '🏢', L('Företag', 'Company'), L('Alla företag', 'All companies'), comps, selC)}</div>`;
       const l = document.getElementById('loc'); if (l) l.onchange = (e) => { store.set('sammat_location', e.target.value); load(false); };
       const c = document.getElementById('comp'); if (c) c.onchange = (e) => { store.set('sammat_company', e.target.value); load(false); };
     }
