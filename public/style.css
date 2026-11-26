@@ -250,3 +250,12 @@ details > summary { padding: 4px 0; }
 .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .topbar-right > .row { flex: 0 0 auto !important; }
 #locPick .filters { justify-content: flex-start; margin: -4px 0 14px; }
+
+/* Sub-label tucked behind the logo, in the logo font */
+.brand { position: relative; display: inline-flex; align-items: flex-end; padding-right: 8px; }
+.brand .logo { position: relative; z-index: 2; }
+.logo-sub {
+  position: relative; z-index: 1; margin-left: -14px; margin-bottom: -10px;
+  font-family: var(--logo); font-size: 1.55rem; line-height: 1; letter-spacing: .05em; text-transform: uppercase;
+  color: #fff; transform: rotate(-3deg); text-shadow: 2px 2px 0 var(--purple); opacity: .92;
+}
