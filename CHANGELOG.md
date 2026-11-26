@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.2 – 2026-11-26
+- Footer on every page with a link to the docs site and to GitHub issues for bug reports.
+- Docs: how to reach an unexposed Apprise/ntfy container over a shared network.
+
 ## 2.6.1 – 2026-11-26
 - Webhook formats `ntfy` (topic URL) and `apprise` (Apprise API `/notify/<key>`). Credentials in the URL (`user:pass@` → Basic, `:token@` → Bearer) are sent as an Authorization header.
 - Logo label "ADMIN" in the logo font, behind the logo. The drinks hint text is removed.

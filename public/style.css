@@ -259,3 +259,9 @@ details > summary { padding: 4px 0; }
   font-family: var(--logo); font-size: 1.55rem; line-height: 1; letter-spacing: .05em; text-transform: uppercase;
   color: #fff; transform: rotate(-3deg); text-shadow: 2px 2px 0 var(--purple); opacity: .92;
 }
+
+.foot-project { color: var(--muted); margin-top: 8px; padding-bottom: 18px; opacity: .8; }
+.foot + .foot-project { margin-top: 6px; }
+.foot-project a { text-decoration: underline; text-underline-offset: 2px; }
+.foot-project a:hover { color: var(--red); }
+@media print { .foot-project { display: none; } }

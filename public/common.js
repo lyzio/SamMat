@@ -43,6 +43,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ---------- Basics ----------
+// Footer on every page: about/docs + where to report bugs
+const PROJECT_DOCS = 'https://lyzio.github.io/SamMat/';
+const PROJECT_ISSUES = 'https://github.com/lyzio/SamMat/issues';
+document.addEventListener('DOMContentLoaded', () => {
+  const host = document.querySelector('.wrap') || document.body;
+  const info = document.createElement('div');
+  info.className = 'foot foot-project';
+  info.innerHTML = `<a href="${PROJECT_DOCS}" target="_blank" rel="noopener">${L('Om SamMat', 'About SamMat')}</a> · ` +
+    `${L('Hittar du en bugg? <a href="' + PROJECT_ISSUES + '" target="_blank" rel="noopener">Rapportera den på GitHub</a>', 'Found a bug? <a href="' + PROJECT_ISSUES + '" target="_blank" rel="noopener">Report it on GitHub</a>')}`;
+  const existing = host.querySelector(':scope > .foot');
+  if (existing) existing.after(info); else host.appendChild(info);
+});
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 class ApiError extends Error {
