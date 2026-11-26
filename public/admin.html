@@ -36,8 +36,8 @@
         return;
       }
       document.getElementById('logout').hidden = false;
-      el.innerHTML = '<div id="rounds"></div><div id="places"></div><div id="mailtest"></div>';
-      renderRounds(); renderPlaces(); renderMailTest();
+      el.innerHTML = '<div id="rounds"></div><div id="places"></div><div id="hooks"></div><div id="mailtest"></div>';
+      renderRounds(); renderPlaces(); renderMailTest(); renderHooks();
       timer = setInterval(async () => {
         try { data = await api('/api/admin/overview'); renderRounds(); } catch { /* ignore */ }
       }, 15000);
@@ -160,6 +160,58 @@
         await reload();
         $('oKind').value = kind;
         $('oName').focus();
+      });
+    }
+
+    // ---------- Webhooks ----------
+    let hooks = null;
+    const EVENT_NAMES = { 'round.created': 'Ny runda', 'round.closed': 'Runda stängd', 'food.arrived': 'Maten är här' };
+    const FORMAT_NAMES = { teams: 'Teams (Workflows)', slack: 'Slack', discord: 'Discord', json: 'JSON' };
+    async function renderHooks() {
+      if (!hooks) hooks = await api('/api/admin/webhooks');
+      const rows = hooks.hooks.map((h, i) => `
+        <div class="hook" data-i="${i}">
+          <div class="row">
+            <div style="flex:3"><label>Adress</label><input type="text" class="h-url" value="${esc(h.url)}" placeholder="https://…" /></div>
+            <div style="max-width:190px"><label>Format</label><select class="h-format">
+              ${hooks.formats.map((f) => `<option value="${f}" ${f === h.format ? 'selected' : ''}>${FORMAT_NAMES[f] || f}</option>`).join('')}</select></div>
+          </div>
+          <div class="row" style="margin-top:8px;align-items:center">
+            ${hooks.events.map((ev) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-ev" value="${ev}" ${!h.events || h.events.includes(ev) ? 'checked' : ''} /><span>${EVENT_NAMES[ev] || ev}</span></label>`).join('')}
+            <span style="flex:1"></span>
+            <button type="button" class="secondary small" data-hook-test="${i}" style="flex:0 0 auto">Testa</button>
+            <button type="button" class="danger small" data-hook-del="${i}" style="flex:0 0 auto">Ta bort</button>
+          </div>
+        </div>`).join('');
+      document.getElementById('hooks').innerHTML = `
+        <div class="card">
+          <h2>Webhooks</h2>
+          <p class="muted" style="margin-top:0">Skicka ett meddelande till en kanal när en runda startar, stängs eller maten är här.
+            <strong>Teams</strong>: i kanalen, välj <em>Workflows</em> → <em>Post to a channel when a webhook request is received</em> och klistra in adressen här – ingen Entra-admin behövs.
+            <strong>Slack/Discord</strong>: inkommande webhook. <strong>JSON</strong>: valfri tjänst, t.ex. Power Automate eller n8n.</p>
+          ${rows || '<p class="muted">Inga webhooks.</p>'}
+          <div class="row" style="margin-top:14px">
+            <button type="button" class="secondary" id="hookAdd" style="flex:0 0 auto">+ Lägg till</button>
+            <button type="button" id="hookSave" style="flex:0 0 auto">Spara</button>
+          </div>
+        </div>`;
+      const collect = () => [...document.querySelectorAll('.hook')].map((d) => ({
+        url: d.querySelector('.h-url').value.trim(),
+        format: d.querySelector('.h-format').value,
+        events: [...d.querySelectorAll('.h-ev:checked')].map((c) => c.value)
+      }));
+      document.getElementById('hookAdd').onclick = () => { hooks.hooks = [...collect(), { url: '', format: 'teams', events: hooks.events }]; renderHooks(); };
+      document.getElementById('hookSave').onclick = act(async () => {
+        const r = await api('/api/admin/webhooks', 'PUT', { hooks: collect().filter((h) => h.url) });
+        hooks.hooks = r.hooks; renderHooks(); alert('Sparat.');
+      });
+      document.querySelectorAll('[data-hook-del]').forEach((b) => { b.onclick = () => { const l = collect(); l.splice(Number(b.dataset.hookDel), 1); hooks.hooks = l; renderHooks(); }; });
+      document.querySelectorAll('[data-hook-test]').forEach((b) => {
+        b.onclick = act(async () => {
+          const h = collect()[Number(b.dataset.hookTest)];
+          await api('/api/admin/webhooks/test', 'POST', { url: h.url, format: h.format });
+          alert('Testmeddelande skickat.');
+        });
       });
     }
 

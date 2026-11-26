@@ -76,12 +76,12 @@
       renderHead(); renderOrders(); renderMail(); renderSettings();
     }
 
-    async function refresh() {
+    async function refresh(force) {
       if (!(await fetchData())) return;
       renderHead();
       const box = document.getElementById('orders');
-      const typing = box.contains(document.activeElement) && document.activeElement.matches('input[type=number]');
-      if (!typing) renderOrders();
+      const typing = box.contains(document.activeElement) && document.activeElement.matches('input');
+      if (force === true || !typing) renderOrders();
       updateCounts();
     }
 
@@ -129,46 +129,57 @@
     function renderOrders() {
       const orders = active();
       const cancelled = data.orders.filter((o) => o.cancelled_at);
-      const showStatus = data.round.confirm || cancelled.length > 0;
+      const r = data.round;
+      const showStatus = r.confirm || cancelled.length > 0;
+      const showShare = r.sharedCost > 0;
       const status = (o) => o.cancelled_at ? '<span class="st no">Avbokad</span>'
         : o.confirmed_at ? '<span class="st yes">✓ Bekräftad</span>'
-        : data.round.reminderSentAt && data.round.confirm ? '<span class="st wait">Väntar</span>' : '';
+        : r.reminderSentAt && r.confirm ? '<span class="st wait">Väntar</span>' : '';
       const box = document.getElementById('orders');
       if (!data.orders.length) {
         box.innerHTML = `<div class="card"><h2>Orderlista</h2><p class="muted">Inga beställningar ännu. Dela länken!</p></div>`;
         return;
       }
-      const sum = orders.reduce((s, o) => s + amount(o), 0);
-      const paidSum = orders.filter((o) => o.paid).reduce((s, o) => s + amount(o), 0);
+      const owed = orders.reduce((s, o) => s + o.owed, 0);
+      const paidSum = orders.reduce((s, o) => s + Math.min(o.paid, o.owed), 0);
       const t = (iso) => (iso ? hm(iso) : '');
-      const payRows = [...orders, ...cancelled].map((o) => o.cancelled_at ? `
+      const mailed = (o) => [o.reminder_mail_at ? `🔔 ${t(o.reminder_mail_at)}` : '', o.food_mail_at ? `🍽️ ${t(o.food_mail_at)}` : '',
+        o.pay_mail_at ? `💸 ${t(o.pay_mail_at)}` : '', o.pay_remind_at ? `⏰ ${t(o.pay_remind_at)}` : ''].filter(Boolean).join('<br>');
+      const paidCell = (o) => {
+        const part = o.paid > 0 && !o.isPaid;
+        return `<input type="checkbox" data-paid="${o.order_number}" ${o.isPaid ? 'checked' : ''} />
+          ${part ? `<div class="st wait" title="Betalt ${o.paid} kr">kvar ${o.outstanding} kr</div>` : ''}`;
+      };
+      const row = (o) => o.cancelled_at ? `
         <tr class="cancelled">
           <td class="nr">#${o.order_number}</td>
           <td>${esc(o.customer_name)}<div class="muted" style="font-size:.8rem">${esc(o.email)}</div></td>
           <td>${esc(o.item_name)}</td>
           <td class="r muted">${o.total_price} kr</td>
-          <td></td><td></td>
+          <td></td>${showShare ? '<td></td>' : ''}<td></td><td></td>
           ${showStatus ? `<td>${status(o)}</td>` : ''}
-          <td class="r" style="white-space:nowrap"><button class="secondary small" data-restore="${o.order_number}" title="Ångra avbokning">↺</button></td>
+          <td class="r"><button class="secondary small" data-restore="${o.order_number}" title="Ångra avbokning">↺</button></td>
           <td class="r"><button class="danger small" data-del="${o.order_number}">✕</button></td>
         </tr>` : `
-        <tr class="${o.paid ? 'paid' : ''}">
+        <tr class="${o.isPaid ? 'paid' : ''}">
           <td class="nr">#${o.order_number}</td>
           <td>${esc(o.customer_name)}<div class="muted" style="font-size:.8rem">${esc(o.email)}</div></td>
           <td>${esc(o.item_name)}</td>
           <td class="r muted">${o.total_price} kr</td>
           <td class="r"><input type="number" min="0" class="price-in ${o.final_price != null && o.final_price !== o.total_price ? 'changed' : ''}"
                data-price="${o.order_number}" value="${o.final_price ?? ''}" placeholder="${o.total_price}" /></td>
-          <td class="center"><input type="checkbox" data-paid="${o.order_number}" ${o.paid ? 'checked' : ''} /></td>
+          ${showShare ? `<td class="r muted">+${o.share} kr</td>` : ''}
+          <td class="r"><strong>${o.owed} kr</strong></td>
+          <td class="center">${paidCell(o)}</td>
           ${showStatus ? `<td>${status(o)}</td>` : ''}
-          <td class="muted" style="font-size:.8rem;white-space:nowrap">${[o.reminder_mail_at ? `🔔 ${t(o.reminder_mail_at)}` : '', o.food_mail_at ? `🍽️ ${t(o.food_mail_at)}` : '', o.pay_mail_at ? `💸 ${t(o.pay_mail_at)}` : ''].filter(Boolean).join('<br>')}</td>
+          <td class="muted" style="font-size:.8rem;white-space:nowrap">${mailed(o)}</td>
           <td class="r"><button class="danger small" data-del="${o.order_number}">✕</button></td>
-        </tr>`).join('');
+        </tr>`;
 
       box.innerHTML = `
         <div class="card">
           <div class="row" style="justify-content:space-between;align-items:center">
-            <h2 style="margin:0;flex:1">Orderlista – ${esc(data.round.title)} <span class="muted">(${orders.length} st${cancelled.length ? `, ${cancelled.length} avbokade` : ''})</span></h2>
+            <h2 style="margin:0;flex:1">Orderlista – ${esc(r.title)} <span class="muted">(${orders.length} st${cancelled.length ? `, ${cancelled.length} avbokade` : ''})</span></h2>
             <button class="secondary small no-print" data-copy="list" style="flex:0 0 auto">Kopiera</button>
             <button class="secondary small no-print" onclick="window.print()" style="flex:0 0 auto">Skriv ut</button>
           </div>
@@ -181,15 +192,27 @@
         </div>
         <div class="card no-print">
           <h2>Betalning</h2>
-          <p class="muted">Totalt: <strong>${sum} kr</strong> · Swishat: <strong>${paidSum} kr</strong> · Kvar: <strong>${sum - paidSum} kr</strong><br>
-            ${data.round.payMode === 'before'
-              ? 'Alla fick Swish direkt med menypriset. Skiljer kvittot? Justera <em>Att betala</em> och skicka betalningsmejl till de som inte är markerade som swishade.'
-              : 'Skriv in det riktiga priset från kvittot i <em>Att betala</em> (tomt = menypris). Det används i betalningsmejlet.'}</p>
+          <p class="muted">Att få in: <strong>${owed} kr</strong> · Swishat: <strong>${paidSum} kr</strong> · Kvar: <strong>${owed - paidSum} kr</strong></p>
+          <form id="sharedForm" class="row" style="margin:6px 0 4px">
+            <div><label for="shLabel">Gemensam kostnad</label><input id="shLabel" type="text" maxlength="40" placeholder="T.ex. Utkörning" value="${esc(r.sharedLabel)}" /></div>
+            <div style="max-width:140px;min-width:110px"><label for="shCost">Belopp kr</label><input id="shCost" type="number" min="0" value="${r.sharedCost || ''}" placeholder="0" /></div>
+            <button type="submit" class="secondary">Fördela</button>
+          </form>
+          <p class="muted" style="font-size:.82rem;margin:4px 0 0">
+            ${r.sharedCost && orders.length ? (() => { const lo = Math.floor(r.sharedCost / orders.length), hi = Math.ceil(r.sharedCost / orders.length); return `${r.sharedCost} kr delas lika på ${orders.length} – ${lo === hi ? lo : lo + '–' + hi} kr var. `; })() : 'Delas lika på alla som inte avbokat. '}
+            ${r.payMode === 'before'
+              ? 'Alla fick Swish direkt med menypriset. Kryssa "Swishat" när de betalt – ändras priset eller tillkommer en gemensam kostnad efteråt, får de ett betalningsmejl med bara mellanskillnaden.'
+              : 'Skriv in det riktiga priset från kvittot i <em>Mat</em> (tomt = menypris). Det används i betalningsmejlet.'}</p>
           <div class="table-scroll"><table>
-            <thead><tr><th>Nr</th><th>Namn</th><th>Produkt</th><th class="r">Meny</th><th class="r">Att betala</th><th>Swishat</th>${showStatus ? '<th>Status</th>' : ''}<th>Mejlat</th><th></th></tr></thead>
-            <tbody>${payRows}</tbody>
+            <thead><tr><th>Nr</th><th>Namn</th><th>Produkt</th><th class="r">Meny</th><th class="r">Mat</th>${showShare ? `<th class="r">${esc(r.sharedLabel || 'Andel')}</th>` : ''}<th class="r">Totalt</th><th>Swishat</th>${showStatus ? '<th>Status</th>' : ''}<th>Mejlat</th><th></th></tr></thead>
+            <tbody>${[...orders, ...cancelled].map(row).join('')}</tbody>
           </table></div>
         </div>`;
+      document.getElementById('sharedForm').onsubmit = act(async (e) => {
+        e.preventDefault();
+        await api(base, 'PATCH', { sharedLabel: document.getElementById('shLabel').value.trim(), sharedCost: Number(document.getElementById('shCost').value || 0) });
+        await refresh(true);
+      });
     }
 
     // ---------- Mail ----------
@@ -197,7 +220,7 @@
       const f = document.getElementById('cntFood'); const p = document.getElementById('cntPay');
       const r = document.getElementById('cntRem');
       if (f) f.textContent = active().length;
-      if (p) p.textContent = active().filter((o) => !o.paid).length;
+      if (p) p.textContent = active().filter((o) => o.outstanding > 0).length;
       if (r) r.textContent = active().length;
     }
 
@@ -215,7 +238,7 @@
           <textarea id="mailExtra" rows="2" maxlength="500" placeholder="T.ex. Maten står i köket på plan 3"></textarea>
           <div class="row" style="margin-top:12px">
             <button data-mail="food" style="flex:0 0 auto">🍽️ Maten är här (<span id="cntFood">0</span>)</button>
-            <button data-mail="pay" class="go" style="flex:0 0 auto">💸 Skicka betalningsmejl (<span id="cntPay">0</span> obetalda)</button>
+            <button data-mail="pay" class="go" style="flex:0 0 auto">💸 Skicka betalningsmejl (<span id="cntPay">0</span> med belopp kvar)</button>
             <button data-mail="reminder" class="secondary" style="flex:0 0 auto">🔔 Skicka påminnelse nu (<span id="cntRem">0</span>)</button>
             <button data-mail="orders" class="secondary" style="flex:0 0 auto">📋 Mejla orderlistan till mig</button>
           </div>
@@ -242,7 +265,7 @@
         return;
       }
       const extra = document.getElementById('mailExtra').value.trim();
-      const list = kind === 'food' ? active() : active().filter((o) => !o.paid);
+      const list = kind === 'food' ? active() : active().filter((o) => o.outstanding > 0);
       if (!list.length) return alert('Ingen att skicka till.');
       const already = list.filter((o) => (kind === 'food' ? o.food_mail_at : o.pay_mail_at)).length;
       let msg = `Skicka ${kind === 'food' ? '"Maten är här"' : 'betalningsmejl'} till ${list.length} person(er)?`;
@@ -278,6 +301,11 @@
                 <div><label for="sClose">Stäng beställningar</label><input id="sClose" type="datetime-local" value="${esc(r.isOpen ? isoToLocal(r.closeAt) : '')}" /></div>
                 ${data.mailConfigured ? `<div><label for="sRemind">Påminnelse</label><input id="sRemind" type="datetime-local" value="${esc(r.reminderSentAt ? '' : isoToLocal(r.reminderAt))}" /></div>` : ''}
               </div>
+              ${data.mailConfigured ? `<label for="sPayRemind">Påminn obetalda automatiskt</label>
+              <select id="sPayRemind">
+                ${[[0, 'Nej'], [2, '2 timmar efter betalningsmejlet'], [4, '4 timmar efter'], [24, 'Dagen efter (24 h)'], [48, 'Två dagar efter (48 h)']]
+                  .map(([v, l]) => `<option value="${v}" ${r.payRemindHours === v ? 'selected' : ''}>${l}</option>`).join('')}
+              </select>` : ''}
               <label for="sPay">Betalning</label>
               <select id="sPay">
                 <option value="after" ${r.payMode === 'after' ? 'selected' : ''}>Efter maten – betalningsmejl</option>
@@ -304,6 +332,7 @@
           swishNumber: $('sSwish').value.trim(),
           eventDate: $('sDate').value,
           payMode: $('sPay').value,
+          ...($('sPayRemind') ? { payRemindHours: Number($('sPayRemind').value) } : {}),
           closeAt: $('sClose').value ? new Date($('sClose').value).toISOString() : null,
           foodEta: $('sEta').value,
           creatorEmail: $('sEmail').value.trim()
@@ -340,7 +369,7 @@
         return refresh();
       }
       if (t.dataset.end !== undefined) {
-        const unpaid = active().filter((o) => !o.paid).length;
+        const unpaid = active().filter((o) => o.outstanding > 0).length;
         if (!confirm(`Avsluta rundan?\n\nAlla ${data.orders.length} beställningar raderas permanent, med namn och e-postadresser. Betalningslänkarna slutar fungera.` + (unpaid ? `\n\nOBS: ${unpaid} är inte markerade som swishade.` : ''))) return;
         await api(`${base}/end`, 'POST', {});
         clearInterval(timer);
@@ -361,10 +390,10 @@
       if (t.dataset.price) {
         await api(`${base}/orders/${t.dataset.price}/price`, 'PATCH', { price: t.value === '' ? null : Number(t.value) });
         t.blur();
-        await refresh();
+        await refresh(true);
       } else if (t.dataset.paid) {
         await api(`${base}/orders/${t.dataset.paid}/paid`, 'PATCH', { paid: t.checked });
-        await refresh();
+        await refresh(true);
       }
     }));
 

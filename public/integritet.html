@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sammat – Integritet</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="wrap narrow">
+    <div class="topbar"><a href="/" class="logo">Sammat</a><a href="/">← Startsidan</a></div>
+    <div class="card prose">
+      <h1>Vad sparas?</h1>
+
+      <h2>När du beställer</h2>
+      <p>Ditt namn, din e-post och vad du beställt sparas i den runda du beställer i. Det används för orderlistan och för mejlen
+        (påminnelse, "maten är här" och betalning). Namn och rätt syns som en lapp på beställningssidan för alla med länken.</p>
+      <p>När rundan avslutas raderas allt om den, och rundor raderas automatiskt <span id="purge">7</span> dagar efter sitt datum.
+        Raderingen skriver över datan i databasfilen, så den ligger inte kvar.</p>
+
+      <h2>"Kom ihåg min beställning"</h2>
+      <p>Bara om du kryssar i rutan. Då sparas, per ställe:</p>
+      <ul>
+        <li>en <strong>krypterad nyckel</strong> av din e-post (en HMAC – själva adressen sparas inte),</li>
+        <li>ditt namn,</li>
+        <li>vad du beställde: rätt, tillval, bortval och det du skrev i "Valfri bortval eller allergier".</li>
+      </ul>
+      <p>Nästa gång du skriver samma e-post <em>och</em> namn hos samma ställe föreslås samma beställning. Det sparas i <span id="fav">180</span> dagar efter
+        din senaste beställning. Avkryssar du rutan när du beställer tas det bort för det stället.</p>
+
+      <h2>Glöm mig</h2>
+      <p>Ta bort allt som är sparat för "kom ihåg" för din e-post, hos alla ställen:</p>
+      <form id="forget" class="row">
+        <div><input id="email" type="email" required placeholder="din@adress.se" autocomplete="email" /></div>
+        <button type="submit" class="danger">Glöm mig</button>
+      </form>
+      <div id="out"></div>
+
+      <h2>Övrigt</h2>
+      <p class="muted">Inga cookies för spårning. En cookie används bara för den som hanterar en runda (inloggning med PIN).
+        Webbläsaren kommer ihåg ditt namn och din e-post lokalt för att fylla i formuläret. Typsnitt och allt annat laddas från den här servern.</p>
+      <p class="muted">Sammat är fri programvara: <a href="https://github.com/lyzio/SamMat">github.com/lyzio/SamMat</a>.</p>
+    </div>
+  </div>
+  <script>
+    api('/api/info').then((i) => {
+      document.getElementById('fav').textContent = i.favoriteDays;
+      document.getElementById('purge').textContent = i.purgeDays;
+    }).catch(() => {});
+    document.getElementById('email').value = store.get('sammat_email');
+    document.getElementById('forget').onsubmit = async (e) => {
+      e.preventDefault();
+      const out = document.getElementById('out');
+      try {
+        const r = await api('/api/forget', 'POST', { email: document.getElementById('email').value.trim() });
+        out.innerHTML = `<p>✓ Klart. ${r.removed ? `${r.removed} sparad${r.removed > 1 ? 'e beställningar' : ' beställning'} borttagen.` : 'Det fanns inget sparat för den adressen.'}</p>`;
+        store.set('sammat_remember', '0');
+      } catch (ex) {
+        out.innerHTML = `<div class="error">${esc(ex.message)}</div>`;
+      }
+    };
+  </script>
+</body>
+</html>

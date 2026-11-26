@@ -113,6 +113,8 @@
           <label for="email">E-post</label>
           <input id="email" type="email" required maxlength="120" placeholder="namn@exempel.se" autocomplete="email" value="${esc(store.get('sammat_email'))}" />
 
+          <div id="last"></div>
+
           <label for="menu">Produkt</label>
           <select id="menu" required>
             <option value="">– Välj –</option>
@@ -123,7 +125,11 @@
 
           <label>Bortval</label>
           ${round.removals.length ? `<div class="opt-list">${opt(round.removals, 'removal', false)}</div>` : ''}
-          <input id="customRemoval" type="text" maxlength="120" placeholder="Annat bortval / kommentar (frivilligt)" style="margin-top:8px" />
+          <input id="customRemoval" type="text" maxlength="120" placeholder="Valfri bortval eller allergier" style="margin-top:8px" />
+
+          <label class="check"><input type="checkbox" id="remember" ${store.get('sammat_remember') === '1' ? 'checked' : ''} />
+            <span>Kom ihåg min beställning hos ${esc(round.placeName)} till nästa gång
+              <span class="muted" style="display:block;font-size:.8rem">Sparar namn, beställning och en krypterad nyckel av din e-post i ${INFO.favoriteDays} dagar. <a href="/integritet">Läs mer / glöm mig</a></span></span></label>
 
           <div class="summary"><span>Pris (enligt meny)</span><span id="total">0 kr</span></div>
           <div id="err"></div>
@@ -133,6 +139,33 @@
       const form = document.getElementById('f');
       form.addEventListener('change', total);
       total();
+
+      // "Same as last time": look up by e-mail + name for this place
+      let lastKey = '';
+      async function checkLast() {
+        const email = document.getElementById('email').value.trim();
+        const name = document.getElementById('name').value.trim();
+        const key = email.toLowerCase() + '|' + name.toLowerCase();
+        if (!email || !name || key === lastKey) return;
+        lastKey = key;
+        let f;
+        try { f = await api(`/api/rounds/${slug}/last`, 'POST', { email, name }); } catch { return; }
+        const el = document.getElementById('last');
+        if (!f.found) { el.innerHTML = ''; return; }
+        el.innerHTML = `<div class="last-box"><span>Samma som förra gången?<br><strong>${esc(f.label)}</strong></span>
+          <button type="button" class="secondary small" id="useLast">Fyll i</button></div>`;
+        document.getElementById('useLast').onclick = () => {
+          document.getElementById('menu').value = String(f.menuItemId);
+          document.querySelectorAll('input[name="addon"]').forEach((cb) => { cb.checked = f.addonIds.includes(Number(cb.value)); });
+          document.querySelectorAll('input[name="removal"]').forEach((cb) => { cb.checked = f.removalIds.includes(Number(cb.value)); });
+          document.getElementById('customRemoval').value = f.custom || '';
+          document.getElementById('remember').checked = true;
+          total();
+          el.innerHTML = '<div class="last-box"><span>✓ Ifyllt som förra gången – ändra om du vill.</span></div>';
+        };
+      }
+      ['email', 'name'].forEach((id) => document.getElementById(id).addEventListener('change', checkLast));
+      checkLast();
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -146,12 +179,14 @@
           menuItemId: Number(document.getElementById('menu').value),
           addonIds: [...document.querySelectorAll('input[name="addon"]:checked')].map((x) => Number(x.value)),
           removalIds: [...document.querySelectorAll('input[name="removal"]:checked')].map((x) => Number(x.value)),
-          customRemoval: document.getElementById('customRemoval').value.trim()
+          customRemoval: document.getElementById('customRemoval').value.trim(),
+          remember: document.getElementById('remember').checked
         };
         try {
           const o = await api(`/api/rounds/${slug}/orders`, 'POST', body);
           store.set('sammat_name', body.customerName);
           store.set('sammat_email', body.email);
+          store.set('sammat_remember', body.remember ? '1' : '0');
           renderDone(o);
           load();
         } catch (ex) {
@@ -203,8 +238,8 @@
       document.getElementById('again').onclick = () => { mode = null; load(); };
     }
 
-    load();
-    setInterval(load, 10000);
+    let INFO = { favoriteDays: 180 };
+    api('/api/info').then((i) => { INFO = i; }).catch(() => {}).finally(() => { load(); setInterval(load, 10000); });
   </script>
 </body>
 </html>

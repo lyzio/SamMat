@@ -1,6 +1,6 @@
 // Sammat – sambeställning av mat med Swish
 // Copyright (C) 2026 Oliver Sundström
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 // Source: https://github.com/lyzio/SamMat
 'use strict';
 
@@ -16,9 +16,10 @@ const nodemailer = require('nodemailer');
 const PORT = Number(process.env.PORT || 3000);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'sammat.db');
 const ADMIN_PIN = String(process.env.ADMIN_PIN || process.env.ADMIN_PASSWORD || '').trim();
-const PUBLIC_URL = (process.env.PUBLIC_URL || 'https://sammat.lyzio.net').replace(/\/+$/, '');
+const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/+$/, ''); // set this in production (links in mails)
 const PURGE_DAYS = Number(process.env.PURGE_DAYS || 7); // rounds older than this are ended and deleted
 const MAX_ACTIVE_ROUNDS = Number(process.env.MAX_ACTIVE_ROUNDS || 30);
+const FAVORITE_DAYS = Number(process.env.FAVORITE_DAYS || 180); // "same as last time" is kept this long after the last order
 const SESSION_HOURS = 24;
 
 if (ADMIN_PIN.length < 4 || ADMIN_PIN === 'CHANGE_ME') {
@@ -127,6 +128,35 @@ addCols('rounds', [
   ['pay_mode', "TEXT NOT NULL DEFAULT 'after'"] // 'after' = payment mail after the food, 'before' = Swish right after ordering
 ]);
 addCols('orders', [['confirmed_at', 'TEXT'], ['cancelled_at', 'TEXT'], ['reminder_mail_at', 'TEXT']]);
+
+// v2.2: shared cost, paid amounts, automatic payment reminder
+addCols('rounds', [
+  ['shared_cost', 'INTEGER NOT NULL DEFAULT 0'],       // e.g. delivery fee, split equally over active orders
+  ['shared_label', "TEXT NOT NULL DEFAULT ''"],
+  ['pay_remind_hours', 'INTEGER NOT NULL DEFAULT 0']   // 0 = off; else one reminder this many hours after the payment mail
+]);
+addCols('orders', [['paid_amount', 'INTEGER NOT NULL DEFAULT 0'], ['pay_remind_at', 'TEXT']]);
+db.exec('UPDATE orders SET paid_amount = COALESCE(final_price, total_price) WHERE paid = 1 AND paid_amount = 0');
+
+// v2.2: "same as last time" (opt-in) and settings (webhooks, hash salt)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS favorites (
+    email_hash TEXT NOT NULL,          -- HMAC of the e-mail, the address itself is not stored
+    place_id INTEGER NOT NULL REFERENCES places(id) ON DELETE CASCADE,
+    name_lc TEXT NOT NULL,             -- lookup needs name + e-mail
+    item_name TEXT NOT NULL,
+    addons TEXT NOT NULL DEFAULT '[]', -- JSON array of names
+    removals TEXT NOT NULL DEFAULT '[]',
+    custom TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (email_hash, place_id)
+  );
+  CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+`);
+const getSetting = (k, d = null) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k); return r ? r.value : d; };
+const setSetting = (k, v) => db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(k, v);
+if (!getSetting('hash_salt')) setSetting('hash_salt', crypto.randomBytes(32).toString('hex'));
+const emailHash = (email) => crypto.createHmac('sha256', getSetting('hash_salt')).update(String(email).trim().toLowerCase()).digest('hex');
 db.exec("UPDATE rounds SET event_date = substr(created_at, 1, 10) WHERE event_date IS NULL");
 
 // ---------- Helpers ----------
@@ -134,7 +164,27 @@ const clean = (v, max = 80) => String(v ?? '').replace(/[\u0000-\u001f]/g, '').t
 const toInt = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.round(n) : NaN; };
 const isEmail = (s) => /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(s);
 const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const amountOf = (o) => (o.final_price ?? o.total_price);
+// ---------- Money ----------
+// Shared cost (e.g. delivery) split equally over active orders in whole kronor; the first orders take the remainder.
+function sharesFor(roundId) {
+  const r = db.prepare('SELECT shared_cost FROM rounds WHERE id = ?').get(roundId);
+  const active = db.prepare('SELECT id FROM orders WHERE round_id = ? AND cancelled_at IS NULL ORDER BY nr').all(roundId);
+  const m = new Map();
+  const cost = r ? r.shared_cost : 0;
+  if (!cost || !active.length) return m;
+  const base = Math.floor(cost / active.length);
+  let rest = cost - base * active.length;
+  for (const { id } of active) { m.set(id, base + (rest > 0 ? 1 : 0)); if (rest > 0) rest -= 1; }
+  return m;
+}
+// food = menu or receipt price; owed = food + share; outstanding = owed - already paid
+function money(o, shares) {
+  const food = o.final_price ?? o.total_price;
+  const share = o.cancelled_at ? 0 : (shares.get(o.id) || 0);
+  const owed = o.cancelled_at ? 0 : food + share;
+  const paid = o.paid_amount || 0;
+  return { food, share, owed, paid, outstanding: Math.max(0, owed - paid), isPaid: owed > 0 && paid >= owed };
+}
 const orderText = (o) => [o.item_name, o.addons_text, o.removals_text].filter(Boolean).join(' - ');
 const orderLine = (o) => `#${o.nr} (${o.customer_name}) ${orderText(o)}`;
 const swishDigits = (n) => String(n).replace(/\D/g, '');
@@ -178,10 +228,9 @@ function swishMessage(text) {
   return String(text).replace(/[^0-9A-Za-zÅÄÖåäöÉéÜü .,:!?()\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 50);
 }
 
-function swishFor(order, round) {
+function swishFor(order, round, amount) {
   const message = swishMessage(`${round.place_name} - ${order.customer_name}`);
   const payee = swishDigits(round.swish_number);
-  const amount = amountOf(order);
   return {
     message, amount,
     qrText: `C${payee};${amount};${message};0`, // 0 = nothing editable
@@ -223,6 +272,8 @@ function publicRound(r) {
     reminderSentAt: r.reminder_sent_at,
     confirm: Boolean(r.confirm),
     payMode: r.pay_mode === 'before' ? 'before' : 'after',
+    sharedCost: r.shared_cost,
+    sharedLabel: r.shared_label,
     orderCount: db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n,
     createdAt: r.created_at
   };
@@ -238,6 +289,7 @@ function manageRound(r) {
     swishNumber: r.swish_number,
     creatorEmail: r.creator_email,
     mailOrders: Boolean(r.mail_orders),
+    payRemindHours: r.pay_remind_hours,
     ordersMailedAt: r.orders_mailed_at,
     link: `${PUBLIC_URL}/r/${r.slug}`,
     manageLink: `${PUBLIC_URL}/r/${r.slug}/admin`
@@ -365,6 +417,7 @@ app.get('/r/:slug', page('round.html'));
 app.get('/r/:slug/admin', page('manage.html'));
 app.get('/pay/:token', page('pay.html'));
 app.get('/svar/:token', page('svar.html'));
+app.get('/integritet', page('integritet.html'));
 app.use('/fonts', express.static(path.join(__dirname, 'node_modules', '@fontsource'), { maxAge: '30d', immutable: true }));
 app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
 
@@ -403,6 +456,9 @@ app.post('/api/rounds', async (req, res) => {
   const reminder = parseFuture(req.body.reminderAt, 'påminnelsetid');
   const confirm = Boolean(req.body.confirm) && Boolean(reminder.value);
   const payMode = req.body.payMode === 'before' ? 'before' : 'after';
+  const sharedCost = Math.max(0, Math.min(100000, toInt(req.body.sharedCost) || 0));
+  const sharedLabel = clean(req.body.sharedLabel, 40);
+  const payRemindHours = [0, 2, 4, 24, 48].includes(toInt(req.body.payRemindHours)) ? toInt(req.body.payRemindHours) : 0;
 
   if (!place) return res.status(400).json({ error: 'Välj ett ställe.' });
   if (!creatorName) return res.status(400).json({ error: 'Ange ditt namn.' });
@@ -419,15 +475,16 @@ app.post('/api/rounds', async (req, res) => {
   const pin = newPin();
   const info = db.prepare(`
     INSERT INTO rounds (slug, pin, name, place_id, swish_number, creator_name, creator_email, food_eta, close_at, mail_orders,
-                        event_date, reminder_at, confirm, pay_mode, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_date, reminder_at, confirm, pay_mode, shared_cost, shared_label, pay_remind_hours, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(slug, pin, name, placeId, swishNumber, creatorName, creatorEmail, foodEta, close.value, mailOrders ? 1 : 0,
-    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, new Date().toISOString());
+    eventDate.value, reminder.value, confirm ? 1 : 0, payMode, sharedCost, sharedLabel, payRemindHours, new Date().toISOString());
   recent.push(now);
   createLog.set(req.ip, recent);
 
   const r = getRoundById(Number(info.lastInsertRowid));
   grant(req, res, `round:${r.id}`);
+  emit('round.created', r);
   if (creatorEmail && mailConfigured) {
     const m = createdMail(r);
     transporter.sendMail({ from: SMTP.from, to: creatorEmail, ...m }).catch((e) => console.error('Startmejl:', e.message));
@@ -480,6 +537,20 @@ app.post('/api/rounds/:slug/orders', (req, res) => {
       r.reminder_sent_at ? new Date().toISOString() : null, new Date().toISOString());
   })();
 
+  // "Same as last time": opt-in, keyed on e-mail (hashed) + place, needs the name too when read back
+  const ek = emailHash(email);
+  if (req.body.remember) {
+    db.prepare(`
+      INSERT INTO favorites (email_hash, place_id, name_lc, item_name, addons, removals, custom, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(email_hash, place_id) DO UPDATE SET name_lc = excluded.name_lc, item_name = excluded.item_name,
+        addons = excluded.addons, removals = excluded.removals, custom = excluded.custom, updated_at = excluded.updated_at
+    `).run(ek, r.place_id, customerName.toLowerCase(), item.name, JSON.stringify(addons.map((a) => a.name)),
+      JSON.stringify(removals.map((x) => x.name)), customRemoval, new Date().toISOString());
+  } else {
+    db.prepare('DELETE FROM favorites WHERE email_hash = ? AND place_id = ?').run(ek, r.place_id);
+  }
+
   // Pay before: the order page shows Swish right away, and the same payment info is mailed
   if (r.pay_mode === 'before' && mailConfigured) {
     const o = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(payToken);
@@ -496,17 +567,50 @@ app.post('/api/rounds/:slug/orders', (req, res) => {
   });
 });
 
+// "Same as last time" – needs e-mail AND name, mapped onto the place's current menu
+app.post('/api/rounds/:slug/last', (req, res) => {
+  const r = getRoundBySlug(req.params.slug);
+  if (!r) return res.status(404).json({ error: 'Sambeställningen finns inte (längre).' });
+  const email = clean(req.body.email, 120).toLowerCase();
+  const name = clean(req.body.name, 40).toLowerCase();
+  if (!isEmail(email) || !name) return res.json({ found: false });
+  const f = db.prepare('SELECT * FROM favorites WHERE email_hash = ? AND place_id = ? AND name_lc = ?').get(emailHash(email), r.place_id, name);
+  if (!f) return res.json({ found: false });
+  const { menu, addons, removals } = menuFor(r.place_id);
+  const item = menu.find((m) => m.name === f.item_name);
+  if (!item) return res.json({ found: false });
+  const pick = (list, names) => list.filter((x) => JSON.parse(names).includes(x.name)).map((x) => x.id);
+  res.json({
+    found: true, itemName: f.item_name, menuItemId: item.id,
+    addonIds: pick(addons, f.addons), removalIds: pick(removals, f.removals), custom: f.custom, updatedAt: f.updated_at,
+    label: [f.item_name, JSON.parse(f.addons).join(', '), [...JSON.parse(f.removals), ...(f.custom ? [f.custom] : [])].join(', ')].filter(Boolean).join(' - ')
+  });
+});
+
+// Forget everything remembered for an e-mail (all places)
+app.post('/api/forget', (req, res) => {
+  const email = clean(req.body.email, 120).toLowerCase();
+  if (!isEmail(email)) return res.status(400).json({ error: 'Ange en giltig e-postadress.' });
+  const info = db.prepare('DELETE FROM favorites WHERE email_hash = ?').run(emailHash(email));
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+  res.json({ ok: true, removed: info.changes });
+});
+
+app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, mailConfigured }));
+
 // Payment page data (link from the payment mail)
 app.get('/api/pay/:token', async (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(clean(req.params.token, 64));
   const r = o && getRoundById(o.round_id);
   if (!o || !r) return res.status(404).json({ error: 'Betalningen hittades inte. Rundan kan vara avslutad.' });
-  const sw = swishFor(o, r);
+  const mo = money(o, sharesFor(r.id));
+  const sw = swishFor(o, r, mo.outstanding);
   let qrSvg = '';
   try { qrSvg = await QRCode.toString(sw.qrText, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }); } catch { /* ignore */ }
   res.json({
     orderNumber: o.nr, customerName: o.customer_name, placeName: r.place_name, title: roundTitle(r),
-    orderText: orderText(o), amount: sw.amount, estimated: o.total_price, paid: Boolean(o.paid),
+    orderText: orderText(o), amount: sw.amount, estimated: o.total_price, paid: mo.isPaid || o.cancelled_at != null,
+    food: mo.food, share: mo.share, sharedLabel: r.shared_label, alreadyPaid: mo.paid, owed: mo.owed,
     swishNumber: r.swish_number, swishMessage: sw.message, swishAppUrl: sw.appUrl, qrSvg
   });
 });
@@ -518,7 +622,7 @@ function answerView(o, r) {
     orderNumber: o.nr, customerName: o.customer_name, title: roundTitle(r), placeName: r.place_name,
     eventDate: r.event_date, foodEta: r.food_eta, orderText: orderText(o),
     confirmed: Boolean(o.confirmed_at), cancelled: Boolean(o.cancelled_at), canChange: Boolean(r.is_open),
-    creatorName: r.creator_name, roundLink: `/r/${r.slug}`, payMode: r.pay_mode, paid: Boolean(o.paid)
+    creatorName: r.creator_name, roundLink: `/r/${r.slug}`, payMode: r.pay_mode, paid: (o.paid_amount || 0) > 0
   };
 }
 app.get('/api/answer/:token', (req, res) => {
@@ -553,12 +657,12 @@ app.get('/api/rounds/:slug/manage', requireRound, (req, res) => {
   res.json({
     mailConfigured,
     round: manageRound(req.round),
-    orders: allOrdersOf(req.round.id).map((o) => ({
+    orders: (() => { const sh = sharesFor(req.round.id); return allOrdersOf(req.round.id).map((o) => ({ ...money(o, sh),
       order_number: o.nr, customer_name: o.customer_name, email: o.email, item_name: o.item_name,
       addons_text: o.addons_text, removals_text: o.removals_text, total_price: o.total_price,
-      final_price: o.final_price, paid: o.paid, food_mail_at: o.food_mail_at, pay_mail_at: o.pay_mail_at, created_at: o.created_at,
-      confirmed_at: o.confirmed_at, cancelled_at: o.cancelled_at, reminder_mail_at: o.reminder_mail_at
-    }))
+      final_price: o.final_price, paid_amount: o.paid_amount, food_mail_at: o.food_mail_at, pay_mail_at: o.pay_mail_at, created_at: o.created_at,
+      confirmed_at: o.confirmed_at, cancelled_at: o.cancelled_at, reminder_mail_at: o.reminder_mail_at, pay_remind_at: o.pay_remind_at
+    })); })()
   });
 });
 
@@ -600,6 +704,9 @@ app.patch('/api/rounds/:slug', requireRound, (req, res) => {
   }
   if ('confirm' in b) set.confirm = b.confirm ? 1 : 0;
   if ('payMode' in b) set.pay_mode = b.payMode === 'before' ? 'before' : 'after';
+  if ('sharedCost' in b) set.shared_cost = Math.max(0, Math.min(100000, toInt(b.sharedCost) || 0));
+  if ('sharedLabel' in b) set.shared_label = clean(b.sharedLabel, 40);
+  if ('payRemindHours' in b) set.pay_remind_hours = [0, 2, 4, 24, 48].includes(toInt(b.payRemindHours)) ? toInt(b.payRemindHours) : 0;
   if ('isOpen' in b) {
     set.is_open = b.isOpen ? 1 : 0;
     if (b.isOpen && r.close_at && Date.parse(r.close_at) <= Date.now() && !('closeAt' in b)) set.close_at = null; // reopened after auto close
@@ -613,7 +720,7 @@ app.patch('/api/rounds/:slug', requireRound, (req, res) => {
     db.prepare(`UPDATE rounds SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`).run(...keys.map((k) => set[k]), r.id);
   }
   const updated = getRoundById(r.id);
-  if (r.is_open && !updated.is_open) onClosed(updated).catch(() => {});
+  if (r.is_open && !updated.is_open) { onClosed(updated).catch(() => {}); emit('round.closed', updated); }
   res.json({ ok: true, round: manageRound(updated) });
 });
 
@@ -625,7 +732,11 @@ app.post('/api/rounds/:slug/end', requireRound, (req, res) => {
 const findOrder = (r, nr) => db.prepare('SELECT * FROM orders WHERE round_id = ? AND nr = ?').get(r.id, toInt(nr));
 
 app.patch('/api/rounds/:slug/orders/:nr/paid', requireRound, (req, res) => {
-  db.prepare('UPDATE orders SET paid = ? WHERE round_id = ? AND nr = ?').run(req.body.paid ? 1 : 0, req.round.id, toInt(req.params.nr));
+  // Ticking "Swishat" records what they owe right now; a later shared cost or price change leaves a remainder
+  const o = findOrder(req.round, req.params.nr);
+  if (!o) return res.status(404).json({ error: 'Beställningen finns inte.' });
+  const owed = money(o, sharesFor(req.round.id)).owed;
+  db.prepare('UPDATE orders SET paid_amount = ?, paid = ? WHERE id = ?').run(req.body.paid ? owed : 0, req.body.paid ? 1 : 0, o.id);
   res.json({ ok: true });
 });
 
@@ -769,16 +880,25 @@ function foodMail(o, r, extra) {
   return { subject, text, html };
 }
 
-async function payMail(o, r, extra) {
-  const sw = swishFor(o, r);
+async function payMail(o, r, extra, isReminder = false) {
+  const mo = money(o, sharesFor(r.id));
+  const sw = swishFor(o, r, mo.outstanding);
   const payLink = `${PUBLIC_URL}/pay/${o.pay_token}`;
   const changed = o.final_price != null && o.final_price !== o.total_price;
-  const subject = `Att betala: ${sw.amount} kr – ${roundTitle(r)}`;
+  const subject = `${isReminder ? 'Påminnelse – ' : ''}Att betala: ${sw.amount} kr – ${roundTitle(r)}`;
+  const label = r.shared_label || 'Gemensam kostnad';
+  const parts = [
+    ...(mo.share || mo.paid ? [[`Mat${changed ? ' (enligt kvittot)' : ''}`, `${mo.food} kr`]] : []),
+    ...(mo.share ? [[`${label} (din del)`, `${mo.share} kr`]] : []),
+    ...(mo.paid ? [['Redan betalt', `−${mo.paid} kr`]] : [])
+  ];
   const qrPng = await QRCode.toBuffer(sw.qrText, { type: 'png', width: 360, margin: 2, errorCorrectionLevel: 'M' });
   const text = [
     `Hej ${o.customer_name}!`, '',
+    ...(isReminder ? ['Påminnelse: vi har inte fått din betalning än.', ''] : []),
     `Att betala för maten från ${r.place_name}: ${sw.amount} kr`,
     `#${o.nr} ${orderText(o)}`,
+    ...parts.map(([a, b]) => `  ${a}: ${b}`),
     ...(changed ? [`(Justerat efter kvittot – menypriset var ${o.total_price} kr.)`] : []),
     '', `Swisha till: ${r.swish_number}`, `Meddelande: ${sw.message}`, '',
     `QR-kod och Swish-knapp: ${payLink}`,
@@ -786,8 +906,10 @@ async function payMail(o, r, extra) {
   ].join('\n');
   const html = mailLayout(`
     <p style="margin:0 0 6px">Hej ${escHtml(o.customer_name)}!</p>
-    <p style="margin:0">Här är vad du ska betala för maten från <strong>${escHtml(r.place_name)}</strong>.</p>
+    <p style="margin:0">${isReminder ? 'Påminnelse – vi har inte fått din betalning än. ' : ''}Här är vad du ska betala för maten från <strong>${escHtml(r.place_name)}</strong>.</p>
     ${orderBox(o)}
+    ${parts.length ? `<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 6px;font-size:14px;color:#5b6570">
+      ${parts.map(([a, b]) => `<tr><td style="padding:2px 16px 2px 0">${escHtml(a)}</td><td style="padding:2px 0;text-align:right">${escHtml(b)}</td></tr>`).join('')}</table>` : ''}
     <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:6px 0 4px;font-size:15px">
       <tr><td style="padding:3px 16px 3px 0;color:#5b6570">Belopp</td>
           <td style="padding:3px 0;font-family:${SLAB};font-weight:700;font-size:22px">${sw.amount} kr</td></tr>
@@ -838,6 +960,7 @@ app.post('/api/rounds/:slug/mail/food', requireRound, async (req, res) => {
   const r = req.round;
   const extra = clean(req.body.extra, 500);
   sendingRounds.add(r.id);
+  emit('food.arrived', r, { extra });
   try { res.json(await sendBatch(ordersOf(r.id), (o) => foodMail(o, r, extra), 'food_mail_at')); } finally { sendingRounds.delete(r.id); }
 });
 
@@ -847,7 +970,8 @@ app.post('/api/rounds/:slug/mail/pay', requireRound, async (req, res) => {
   const extra = clean(req.body.extra, 500);
   sendingRounds.add(r.id);
   try {
-    res.json(await sendBatch(ordersOf(r.id).filter((o) => !o.paid), (o) => payMail(o, r, extra), 'pay_mail_at'));
+    const sh = sharesFor(r.id);
+    res.json(await sendBatch(ordersOf(r.id).filter((o) => money(o, sh).outstanding > 0), (o) => payMail(o, r, extra), 'pay_mail_at'));
   } finally { sendingRounds.delete(r.id); }
 });
 
@@ -888,6 +1012,55 @@ async function onClosed(r) {
   } catch (e) {
     db.prepare('UPDATE rounds SET orders_mailed_at = NULL WHERE id = ?').run(r.id);
     console.error(`Orderlista ${r.slug}:`, e.message);
+  }
+}
+
+// ---------- Webhooks: Teams (Workflows), Slack, Discord or plain JSON ----------
+const EVENT_TEXT = {
+  'round.created': (r) => `🍕 ${r.creator_name} startar en sambeställning: ${roundTitle(r)} (${r.place_name})` +
+    `${r.event_date !== todayStr() ? ` för ${dateSv(r.event_date)}` : ''}${r.close_at ? ` – beställ senast ${dayTimeSv(r.close_at)}` : ''}`,
+  'round.closed': (r) => `🔒 ${roundTitle(r)} är stängd – ${db.prepare('SELECT COUNT(*) AS n FROM orders WHERE round_id = ? AND cancelled_at IS NULL').get(r.id).n} beställningar.`,
+  'food.arrived': (r, x) => `🍽️ Maten från ${r.place_name} är här! (${roundTitle(r)})${x && x.extra ? ` ${x.extra}` : ''}`
+};
+const getHooks = () => { try { return JSON.parse(getSetting('webhooks', '[]')); } catch { return []; } };
+
+function hookPayload(format, event, r, text) {
+  const link = `${PUBLIC_URL}/r/${r.slug}`;
+  if (format === 'slack') return { text: `${text}\n${link}` };
+  if (format === 'discord') return { content: `${text}\n${link}` };
+  if (format === 'teams') {
+    return {
+      type: 'message',
+      attachments: [{
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', type: 'AdaptiveCard', version: '1.4',
+          body: [{ type: 'TextBlock', text, wrap: true, weight: 'Bolder' }],
+          actions: event === 'food.arrived' ? [] : [{ type: 'Action.OpenUrl', title: 'Öppna sambeställningen', url: link }]
+        }
+      }]
+    };
+  }
+  return { // json
+    event, text, link,
+    round: { slug: r.slug, title: roundTitle(r), place: r.place_name, creator: r.creator_name, date: r.event_date,
+      closeAt: r.close_at, foodEta: r.food_eta, isOpen: Boolean(r.is_open) }
+  };
+}
+
+async function postHook(h, event, r, extra) {
+  const text = EVENT_TEXT[event](r, extra);
+  const res = await fetch(h.url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(hookPayload(h.format, event, r, text)), signal: AbortSignal.timeout(8000)
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+function emit(event, r, extra) {
+  for (const h of getHooks()) {
+    if (h.events && !h.events.includes(event)) continue;
+    postHook(h, event, r, extra).catch((e) => console.error(`Webhook ${event} → ${h.url.slice(0, 40)}…:`, e.message));
   }
 }
 
@@ -981,6 +1154,36 @@ app.post('/api/admin/rounds/:id/end', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+const HOOK_FORMATS = ['teams', 'slack', 'discord', 'json'];
+const HOOK_EVENTS = Object.keys(EVENT_TEXT);
+app.get('/api/admin/webhooks', requireAdmin, (req, res) => res.json({ hooks: getHooks(), formats: HOOK_FORMATS, events: HOOK_EVENTS }));
+app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
+  const list = Array.isArray(req.body.hooks) ? req.body.hooks : [];
+  const hooks = [];
+  for (const h of list.slice(0, 10)) {
+    const url = clean(h.url, 1000);
+    if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: `Ogiltig adress (måste börja med http:// eller https://): ${url.slice(0, 50)}` });
+    hooks.push({
+      url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json',
+      events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS
+    });
+  }
+  setSetting('webhooks', JSON.stringify(hooks));
+  res.json({ ok: true, hooks });
+});
+app.post('/api/admin/webhooks/test', requireAdmin, async (req, res) => {
+  const url = clean(req.body.url, 1000);
+  if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: "Ogiltig adress." });
+  const fake = { slug: 'test', name: 'Testrunda', place_name: 'Pizzeria Test', creator_name: 'Sammat', event_date: todayStr(),
+    close_at: null, food_eta: '12:00', is_open: 1 };
+  try {
+    await postHook({ url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json' }, 'round.created', fake);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(502).json({ error: 'Misslyckades: ' + e.message });
+  }
+});
+
 app.post('/api/admin/mail/test', requireAdmin, async (req, res) => {
   if (!mailConfigured) return res.status(400).json({ error: 'Mejl är inte konfigurerat.' });
   const to = clean(req.body.to, 120);
@@ -1000,6 +1203,24 @@ app.post('/api/admin/mail/test', requireAdmin, async (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'Okänd adress.' }));
 
 // ---------- Timers: auto close (every 20 s) and clean-up of old rounds (hourly) ----------
+// Optional: one payment reminder per unpaid order, pay_remind_hours after its payment mail
+async function autoPayRemind() {
+  if (!mailConfigured) return;
+  const rounds = db.prepare(`${ROUND_SELECT} WHERE r.pay_remind_hours > 0`).all();
+  for (const r of rounds) {
+    if (sendingRounds.has(r.id)) continue;
+    const cutoff = new Date(Date.now() - r.pay_remind_hours * 3600000).toISOString();
+    const sh = sharesFor(r.id);
+    const due = ordersOf(r.id).filter((o) => o.email && o.pay_mail_at && o.pay_mail_at <= cutoff && !o.pay_remind_at && money(o, sh).outstanding > 0);
+    if (!due.length) continue;
+    sendingRounds.add(r.id);
+    try {
+      const out = await sendBatch(due, (o) => payMail(o, r, '', true), 'pay_remind_at');
+      console.log(`Betalpåminnelse ${r.slug}: ${out.sent} skickade.`);
+    } finally { sendingRounds.delete(r.id); }
+  }
+}
+
 async function autoRemind() {
   if (!mailConfigured) return;
   const due = db.prepare('SELECT id FROM rounds WHERE reminder_at IS NOT NULL AND reminder_sent_at IS NULL AND reminder_at <= ?').all(new Date().toISOString());
@@ -1022,6 +1243,7 @@ function autoClose() {
     db.prepare('UPDATE rounds SET is_open = 0 WHERE id = ?').run(id);
     const r = getRoundById(id);
     console.log(`Runda ${r.slug} stängd automatiskt.`);
+    emit('round.closed', r);
     onClosed(r).catch(() => {});
   }
 }
@@ -1033,6 +1255,9 @@ function autoPurge() {
     endRound(id);
     console.log(`Rensning: runda ${slug} (mer än ${PURGE_DAYS} dagar efter datumet) raderad.`);
   }
+  const favCut = new Date(Date.now() - FAVORITE_DAYS * 86400000).toISOString();
+  const fav = db.prepare('DELETE FROM favorites WHERE updated_at < ?').run(favCut);
+  if (fav.changes) console.log(`Rensning: ${fav.changes} sparade beställningar äldre än ${FAVORITE_DAYS} dagar raderade.`);
   const now = Date.now();
   for (const [t, s] of sessions) if (s.exp < now) sessions.delete(t);
 }
@@ -1041,6 +1266,7 @@ autoClose();
 autoPurge();
 setInterval(autoClose, 20 * 1000).unref();
 setInterval(() => autoRemind().catch(() => {}), 30 * 1000).unref();
+setInterval(() => autoPayRemind().catch((e) => console.error('Betalpåminnelse:', e.message)), 60 * 1000).unref();
 setInterval(autoPurge, 3600 * 1000).unref();
 
 // ---------- Start / stop ----------

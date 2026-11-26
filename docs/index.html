@@ -120,9 +120,13 @@
       <div class="feature"><h3>Ingen inloggning</h3><p>Beställare anger bara namn och e-post. Rundor skyddas med en slumpad PIN, admin med en egen PIN.</p></div>
       <div class="feature"><h3>Swish utan avtal</h3><p>Privat-Swish via QR-kod och swish://-länk med förifyllt belopp och meddelande. Inget företagsavtal eller certifikat.</p></div>
       <div class="feature"><h3>Kvittopris</h3><p>Justera vad var och en ska betala efter kvittot innan betalningsmejlet går ut. Bocka av vem som swishat.</p></div>
+      <div class="feature"><h3>Gemensam kostnad</h3><p>Utkörning eller annat delas lika på alla. Ändras något i efterhand mejlas bara mellanskillnaden.</p></div>
+      <div class="feature"><h3>Betalpåminnelse</h3><p>Valfritt: de som inte swishat får automatiskt en påminnelse efter 2, 4, 24 eller 48 timmar.</p></div>
+      <div class="feature"><h3>Samma som förra gången</h3><p>Kryssa i "kom ihåg" så föreslås din beställning nästa gång. Kräver e-post och namn, och e-posten sparas bara som en nyckel. Glöm mig när du vill.</p></div>
+      <div class="feature"><h3>Teams, Slack, Discord</h3><p>Webhooks när en runda startar, stängs eller maten är här. Teams via Workflows, utan Entra-admin. Eller JSON till valfri tjänst.</p></div>
       <div class="feature"><h3>Flera rundor</h3><p>Olika rundor, ställen och datum samtidigt, med egen numrering från #1 och eget Swish-nummer.</p></div>
       <div class="feature"><h3>Rensar efter sig</h3><p>Avsluta en runda så raderas alla namn och e-postadresser på riktigt. Gamla rundor rensas automatiskt.</p></div>
-      <div class="feature"><h3>Litet och självhostat</h3><p>En container, en SQLite-fil. Node.js + Express. Mejl via valfri SMTP (t.ex. Brevo).</p></div>
+      <div class="feature"><h3>Litet och självhostat</h3><p>En container, en SQLite-fil. Node.js + Express. Mejl via valfri SMTP-server.</p></div>
     </div>
 
     <h2>Fler bilder</h2>
@@ -132,6 +136,8 @@
       <figure><img src="img/answer.png" alt="Bekräfta eller avboka" /><figcaption>Bekräfta eller avboka</figcaption></figure>
       <figure><img src="img/manage-reminder.png" alt="Status för påminnelse" /><figcaption>Status: bekräftat, väntar, avbokat</figcaption></figure>
       <figure><img src="img/admin.png" alt="Admin" /><figcaption>Admin: ställen, menyer och alla rundor</figcaption></figure>
+      <figure><img src="img/last.png" alt="Samma som förra gången" /><figcaption>Samma som förra gången</figcaption></figure>
+      <figure><img src="img/webhooks.png" alt="Webhooks" /><figcaption>Webhooks till Teams, Slack, Discord eller JSON</figcaption></figure>
     </div>
 
     <h2 id="installera">Installera</h2>
@@ -139,9 +145,9 @@
       <code>ghcr.io/lyzio/sammat</code> för amd64 och arm64.</p>
 <pre><code># 1. En mapp med tre filer
 mkdir -p ~/sammat && cd ~/sammat
-curl -LO https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat-compose.yaml
-curl -L -o sammat.env https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat.env.example
-curl -LO https://raw.githubusercontent.com/lyzio/SamMat/main/deploy/sammat.caddy
+curl -LO https://raw.githubusercontent.com/lyzio/SamMat/master/deploy/sammat-compose.yaml
+curl -L -o sammat.env https://raw.githubusercontent.com/lyzio/SamMat/master/deploy/sammat.env.example
+curl -LO https://raw.githubusercontent.com/lyzio/SamMat/master/deploy/sammat.caddy
 chmod 600 sammat.env &amp;&amp; nano sammat.env        # PIN, adress, SMTP
 
 # 2. Plats för databasen (rootless podman: ägd av din användare)
@@ -166,14 +172,16 @@ podman-compose -f sammat-compose.yaml up -d</code></pre>
       <tr><td><code>MAIL_FROM</code></td><td>Avsändare, t.ex. <code>Sammat &lt;sammat@example.com&gt;</code>. Måste vara verifierad hos mejltjänsten.</td></tr>
       <tr><td><code>PURGE_DAYS</code></td><td>Rundor raderas så här många dagar efter sitt datum (standard 7).</td></tr>
       <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
+      <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>
     </table>
 
     <h2>Integritet</h2>
     <p class="muted">Sammat sparar namn, e-post och beställning per runda. När rundan avslutas raderas allt med <code>secure_delete</code>, så att det inte ligger kvar i databasfilen.
-      Rundor som är äldre än <code>PURGE_DAYS</code> dagar efter sitt datum raderas automatiskt. Inga spårare och inga externa resurser – typsnitten serveras lokalt.</p>
+      Rundor som är äldre än <code>PURGE_DAYS</code> dagar efter sitt datum raderas automatiskt. "Kom ihåg min beställning" är opt-in: e-posten sparas bara som en HMAC-nyckel,
+      och på <code>/integritet</code> kan man låta Sammat glömma allt. Inga spårare och inga externa resurser – typsnitten serveras lokalt.</p>
 
     <footer>
-      Sammat är fri programvara under <a href="https://github.com/lyzio/SamMat/blob/main/LICENSE">GNU GPL v3</a>. ·
+      Sammat är fri programvara under <a href="https://github.com/lyzio/SamMat/blob/master/LICENSE">GNU AGPL v3</a>. ·
       <a href="https://github.com/lyzio/SamMat">GitHub</a> ·
       Swish är ett varumärke som tillhör Getswish AB; Sammat har ingen koppling till Swish.
     </footer>

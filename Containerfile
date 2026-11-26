@@ -20,7 +20,7 @@ COPY public ./public
 LABEL org.opencontainers.image.title="Sammat" \
       org.opencontainers.image.description="Sambeställning av mat med Swish" \
       org.opencontainers.image.source="https://github.com/lyzio/SamMat" \
-      org.opencontainers.image.licenses="GPL-3.0-or-later"
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 EXPOSE 3000
 HEALTHCHECK --interval=60s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/healthz || exit 1
 # Runs as root inside the container; with rootless podman that is your own user on the host.

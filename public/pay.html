@@ -26,14 +26,14 @@
         appEl.innerHTML = `<h1>Hittades inte</h1><p class="muted">${esc(o.error || 'Länken fungerar inte längre.')}</p>`;
         return;
       }
-      const changed = o.amount !== o.estimated;
       appEl.innerHTML = `
         <h1>${o.paid ? 'Betalt – tack!' : 'Att betala'}</h1>
         <p class="muted">${esc(o.customerName)} · ${esc(o.placeName)}</p>
         <div class="box">
           <div><strong>#${o.orderNumber}</strong> ${esc(o.orderText)}</div>
           <div class="amount">${o.amount} kr</div>
-          ${changed ? `<div class="muted">Justerat efter kvittot – menypriset var ${o.estimated} kr.</div>` : ''}
+          ${o.share || o.alreadyPaid ? `<div class="muted" style="font-size:.88rem">Mat ${o.food} kr${o.share ? ` + ${esc(o.sharedLabel || 'gemensam kostnad')} ${o.share} kr` : ''}${o.alreadyPaid ? ` − redan betalt ${o.alreadyPaid} kr` : ''}</div>` : ''}
+          ${o.food !== o.estimated ? `<div class="muted">Justerat efter kvittot – menypriset var ${o.estimated} kr.</div>` : ''}
           <div class="muted" style="margin-top:4px">Till: ${esc(o.swishNumber)} · Meddelande: ”${esc(o.swishMessage)}”</div>
         </div>
         ${o.paid ? '<p class="muted">Admin har markerat den här beställningen som betald.</p>' : `

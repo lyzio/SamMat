@@ -56,6 +56,18 @@
             <option value="before">Direkt vid beställning – Swish visas när man beställt</option>
           </select>
 
+          <div class="grid-form">
+            <div><label for="shLabel">Gemensam kostnad <span class="muted">(valfritt)</span></label>
+              <input id="shLabel" type="text" maxlength="40" placeholder="T.ex. Utkörning" /></div>
+            <div><label for="shCost">Belopp kr</label><input id="shCost" type="number" min="0" placeholder="0" /></div>
+          </div>
+          <p class="muted" style="margin:4px 0 0;font-size:.82rem">Delas lika på alla som beställer. Kan ändras senare.</p>
+          ${mailConfigured ? `<label for="payRemind">Påminn de som inte betalat</label>
+          <select id="payRemind">
+            <option value="0">Nej</option><option value="2">2 timmar efter betalningsmejlet</option><option value="4">4 timmar efter</option>
+            <option value="24">Dagen efter (24 h)</option><option value="48">Två dagar efter (48 h)</option>
+          </select>` : ''}
+
           <label for="closeAt">Stäng beställningar <span class="muted">(valfritt)</span></label>
           <input id="closeAt" type="datetime-local" />
           <p class="muted" style="margin:4px 0 0;font-size:.82rem">Tips: bokar ni flera dagar i förväg kan stopptiden vara dagen innan.</p>
@@ -126,6 +138,9 @@
           swishNumber: $('swish').value.trim(),
           eventDate: $('date').value,
           payMode: $('payMode').value,
+          sharedLabel: $('shLabel').value.trim(),
+          sharedCost: Number($('shCost').value || 0),
+          payRemindHours: $('payRemind') ? Number($('payRemind').value) : 0,
           closeAt: closeIso(),
           foodEta: $('eta').value,
           reminderAt: reminderIso(),

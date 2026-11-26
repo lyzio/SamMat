@@ -1,4 +1,4 @@
-/* Sammat – colours and fonts after lyzio.net */
+/* Sammat – theme */
 @font-face { font-family: 'Roboto'; font-weight: 400; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-400-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Roboto'; font-weight: 500; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-500-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Roboto'; font-weight: 700; font-display: swap; src: url('/fonts/roboto/files/roboto-latin-700-normal.woff2') format('woff2'); }
@@ -205,3 +205,10 @@ input[type="date"]::-webkit-calendar-picker-indicator, input[type="datetime-loca
 .st.no { background: rgba(255,82,82,.18); color: var(--coral); }
 tr.cancelled td { color: #6c7a86; text-decoration: line-through; }
 tr.cancelled td:last-child, tr.cancelled td:nth-last-child(2) { text-decoration: none; }
+.last-box { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 14px; padding: 10px 12px;
+  border-radius: 10px; background: rgba(255, 211, 42, .08); border: 1px dashed var(--yellow); font-size: .92rem; }
+.last-box strong { color: var(--yellow); }
+.prose h2 { margin-top: 26px; }
+.prose p, .prose li { color: var(--text); }
+.prose ul { padding-left: 20px; }
+.hook { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px 12px; margin-top: 12px; }
