@@ -56,7 +56,7 @@ h2 { margin: 0 0 12px; font-size: 1.15rem; color: var(--text); }
 summary { cursor: pointer; }
 
 label { display: block; font-weight: 600; margin: 16px 0 6px; font-size: .93rem; }
-input[type="text"], input[type="email"], input[type="time"], input[type="number"], input[type="password"], input[type="tel"], select, textarea {
+input[type="text"], input[type="email"], input[type="time"], input[type="number"], input[type="password"], input[type="tel"], input[type="url"], select, textarea {
   width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 1rem;
   background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s;
 }
@@ -281,3 +281,36 @@ details > summary { padding: 4px 0; }
 @keyframes shake { 10%, 90% { transform: translateX(-2px); } 20%, 80% { transform: translateX(4px); } 30%, 50%, 70% { transform: translateX(-8px); } 40%, 60% { transform: translateX(8px); } }
 .shake { animation: shake .45s; }
 @media (max-width: 380px) { .pin-boxes input.pin-box { width: 50px; height: 60px; } .pin-boxes { gap: 9px; } }
+
+/* Polaroid note (v2.8): a photo with an old-school look */
+.note.polaroid { width: 150px; padding: 9px 9px 12px; background: #fbf8ef; color: #2b2b2b; border-radius: 1px; }
+.note.polaroid::before { margin-top: -15px; }
+.note.polaroid .ph { position: relative; aspect-ratio: 1; overflow: hidden; background: #2a2622; margin-bottom: 8px; }
+.note.polaroid .ph img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  filter: sepia(.28) saturate(.78) contrast(1.08) brightness(1.04) hue-rotate(-6deg);
+}
+/* faded warm wash + vignette + a hint of light leak */
+.note.polaroid .ph::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 18% 12%, rgba(255, 196, 120, .28), transparent 45%),
+    radial-gradient(ellipse at center, transparent 52%, rgba(40, 20, 0, .45) 100%),
+    linear-gradient(rgba(255, 236, 200, .12), rgba(120, 90, 160, .10));
+  mix-blend-mode: multiply;
+}
+.note.polaroid .ph.broken img { display: none; }
+.note.polaroid b { font-size: 1rem; margin-bottom: 1px; }
+.note.polaroid span { font-size: .8rem; color: #555; }
+.photo-pick { display: flex; gap: 14px; align-items: center; }
+.photo-pick .note.mini { width: 84px; padding: 5px 5px 14px; transform: rotate(-3deg); flex: 0 0 auto; }
+.photo-pick .note.mini::before { display: none; }
+.photo-pick .note.mini .ph { margin: 0; }
+.photo-ctl { flex: 1; min-width: 0; }
+/* A few film looks, picked per order number so neighbours differ */
+.note.polaroid.fx1 .ph img { filter: sepia(.55) saturate(.6) contrast(1.12) brightness(1.02); }                 /* old brown */
+.note.polaroid.fx1 .ph::after { background: radial-gradient(ellipse at center, transparent 48%, rgba(50, 25, 0, .55) 100%), linear-gradient(rgba(255, 220, 160, .18), rgba(255, 220, 160, .18)); }
+.note.polaroid.fx2 .ph img { filter: saturate(1.25) contrast(1.15) brightness(1.05) hue-rotate(8deg); }          /* 70s cyan-magenta */
+.note.polaroid.fx2 .ph::after { background: radial-gradient(ellipse at 85% 85%, rgba(255, 90, 140, .25), transparent 50%), radial-gradient(ellipse at center, transparent 55%, rgba(0, 30, 50, .45) 100%), linear-gradient(rgba(80, 200, 220, .12), rgba(80, 200, 220, .12)); }
+.note.polaroid.fx3 .ph img { filter: grayscale(1) contrast(1.2) brightness(1.06); }                               /* black & white */
+.note.polaroid.fx3 .ph::after { background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, .5) 100%); }

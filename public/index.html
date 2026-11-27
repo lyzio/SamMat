@@ -42,11 +42,6 @@
       const rounds = data.rounds.filter((r) => (!sel || !r.locationId || String(r.locationId) === sel)
         && (!selC || !r.companyId || String(r.companyId) === selC));
       const selName = [sel ? locs.find((l) => String(l.id) === sel).name : '', selC ? comps.find((c) => String(c.id) === selC).name : ''].filter(Boolean).join(' · ');
-      // Exactly one round that is open: go straight to it
-      if (first && rounds.length === 1 && rounds[0].isOpen) {
-        location.replace('/r/' + rounds[0].slug);
-        return;
-      }
       const item = (r) => `
         <a class="round-item ${r.isOpen ? '' : 'closed'}" href="/r/${esc(r.slug)}">
           <h2>${esc(r.title)}${r.isToday ? '' : ` <span class="date-tag">${esc(dayWord(r.eventDate))}</span>`}</h2>

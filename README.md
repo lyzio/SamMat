@@ -11,6 +11,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 
 - **Vem som helst startar en runda** och får en länk att dela och en slumpad 4-siffrig PIN att hantera den med. Flera rundor kan pågå samtidigt.
 - **Ingen inloggning för att beställa**: namn, e-post, rätt, tillval och bortval. Varje beställning blir en lapp på beställningssidan.
+- **Polaroid**: lägg till en bild på din lapp, uppladdad eller som länk. Lappen blir en polaroid med gammal filmkänsla.
 - **Dricka med antal**: dryck läggs till med +/−. På orderlistan samlas den längst ner, eftersom alla hämtar sin dryck själva.
 - **Tillval per rätt**: tillval och bortval kan begränsas till vissa rätter.
 - **Ändra eller avboka själv**: efter beställningen visas en länk som fungerar tills beställningen stänger. Webbläsaren kommer ihåg den.
@@ -67,6 +68,7 @@ Peka din reverse proxy på `127.0.0.1:8102`. Gå sedan till `/admin`, logga in m
 | `CREATE_PIN` | Kräv en PIN för att starta en runda (tomt = vem som helst kan). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra. |
 | `BACKUP_DAYS` | Daglig backup i `data/backups/`, sparas så många dagar (standard 7, 0 = av). |
 | `FLOW_TENANT_ID`, `FLOW_CLIENT_ID`, `FLOW_CLIENT_SECRET` | Entra-app för Teams Workflows när *Vem som helst* inte är tillåtet. Se *Teams via Workflows*. |
+| `PHOTOS` | `0` stänger av bilder på lapparna (standard på). Uppladdade bilder sparas i `data/photos/` och raderas med rundan. |
 | `ORDER_LIMIT` | Max antal nya beställningar per IP och 10 minuter (standard 20). |
 | `FAVORITE_DAYS` | Hur länge "samma som förra gången" sparas efter senaste beställningen (standard 180). |
 

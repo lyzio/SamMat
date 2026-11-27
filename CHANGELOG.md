@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.0 – 2026-11-27
+- Photo on your note: upload one (shrunk to a small JPEG in the browser, stored in `<data>/photos/`) or paste an https link. The note becomes a polaroid with an old film look, which varies between four looks. It can be changed or removed with the edit link, and is deleted with the order and the round. `PHOTOS=0` turns it off.
+- Fix: the start page no longer jumps straight into the round when exactly one is open, so you can always start a new one.
+
 ## 2.7.0 – 2026-11-27
 - Teams Workflows / Power Automate in tenants that do not allow "Anyone": set `FLOW_TENANT_ID`, `FLOW_CLIENT_ID` and `FLOW_CLIENT_SECRET` (an Entra app). SamMat then signs those webhook calls with a client-credentials token.
 - Webhook option "Skicka med deltagarna" (teams/json): on "food is here" and "round closed" the payload gets `people` (name, email, order, language and a ready message in their language), for a private Teams message to each person. The privacy page mentions it when it is on.

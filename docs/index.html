@@ -123,6 +123,7 @@
 
     <h2>Funktioner</h2>
     <div class="features">
+      <div class="feature"><h3>Polaroid</h3><p>Lägg till en bild på din lapp, så blir den en polaroid med gammal filmkänsla.</p></div>
       <div class="feature"><h3>Dricka på köpet</h3><p>Dryck med antal, samlad längst ner på orderlappen – den hämtar alla själva.</p></div>
       <div class="feature"><h3>Ändra själv</h3><p>Efter beställningen får man en länk för att ändra eller avboka, ända fram till stopptiden.</p></div>
       <div class="feature"><h3>Svenska &amp; English</h3><p>SV/EN-knapp på alla sidor. Mejlen skickas på mottagarens språk.</p></div>
@@ -203,6 +204,7 @@ networks:
       <tr><td><code>CREATE_PIN</code></td><td>Kräv en PIN för att starta en runda (tomt = vem som helst). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra.</td></tr>
       <tr><td><code>BACKUP_DAYS</code></td><td>Daglig backup i <code>data/backups/</code>, sparas så många dagar (standard 7, 0 = av).</td></tr>
       <tr><td><code>FLOW_TENANT_ID</code>, <code>FLOW_CLIENT_ID</code>, <code>FLOW_CLIENT_SECRET</code></td><td>Entra-app för Teams Workflows när "Vem som helst" inte är tillåtet. Se README.</td></tr>
+      <tr><td><code>PHOTOS</code></td><td><code>0</code> stänger av bilder på lapparna (standard på). Bilderna sparas i <code>data/photos/</code> och raderas med rundan.</td></tr>
       <tr><td><code>ORDER_LIMIT</code></td><td>Max nya beställningar per IP och 10 minuter (standard 20).</td></tr>
       <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>
     </table>

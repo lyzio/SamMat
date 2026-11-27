@@ -29,6 +29,7 @@ const FLOW_AUTH = {
   scope: String(process.env.FLOW_SCOPE || 'https://service.flow.microsoft.com//.default').trim(),
   tokenUrl: String(process.env.FLOW_TOKEN_URL || '').trim() // optional override (other clouds)
 };          // optional: PIN needed to start a round
+const PHOTOS = !/^(0|false|off|no)$/i.test(String(process.env.PHOTOS ?? '1').trim()); // photo on the note (upload or link)
 const BACKUP_DAYS = Number(process.env.BACKUP_DAYS ?? 7);                 // daily backup kept this many days; 0 = off // "same as last time" is kept this long after the last order
 const SESSION_HOURS = 24;
 
@@ -188,6 +189,7 @@ addCols('orders', [
   ['updated_at', 'TEXT']
 ]);
 addCols('favorites', [['extras', "TEXT NOT NULL DEFAULT '[]'"]]);
+addCols('orders', [['photo', 'TEXT']]); // v2.8: <hex>.jpg in PHOTO_DIR, or an https:// link
 addCols('rounds', [['lang', "TEXT NOT NULL DEFAULT 'sv'"]]); // language of the creator (their mails)
 // v2.6: contact info per place (shown to everyone in a round: phone, address, menu link, note)
 addCols('places', [['phone', "TEXT NOT NULL DEFAULT ''"], ['address', "TEXT NOT NULL DEFAULT ''"], ['url', "TEXT NOT NULL DEFAULT ''"], ['note', "TEXT NOT NULL DEFAULT ''"]]);
@@ -372,8 +374,28 @@ function manageRound(r) {
   };
 }
 
-// Delete a round and all its orders (names, e-mails, prices)
+// ---------- Photos on notes (v2.8) ----------
+const PHOTO_DIR = path.join(path.dirname(DB_PATH), 'photos');
+fs.mkdirSync(PHOTO_DIR, { recursive: true });
+const PHOTO_FILE = /^[a-f0-9]{32}\.jpg$/;
+const photoSrc = (p) => (!p ? null : PHOTO_FILE.test(p) ? `/photos/${p}` : p);
+function dropPhoto(p) {
+  if (p && PHOTO_FILE.test(p)) fs.rm(path.join(PHOTO_DIR, p), { force: true }, () => {});
+}
+// Remove files no order points to (after purges, crashes, replaced photos)
+function sweepPhotos() {
+  const used = new Set(db.prepare('SELECT photo FROM orders WHERE photo IS NOT NULL').all().map((x) => x.photo));
+  for (const f of fs.readdirSync(PHOTO_DIR)) {
+    if (!used.has(f)) {
+      const age = Date.now() - fs.statSync(path.join(PHOTO_DIR, f)).mtimeMs;
+      if (age > 10 * 60 * 1000) fs.rmSync(path.join(PHOTO_DIR, f), { force: true });
+    }
+  }
+}
+
+// Delete a round and all its orders (names, e-mails, prices, photos)
 function endRound(id) {
+  for (const o of db.prepare('SELECT photo FROM orders WHERE round_id = ? AND photo IS NOT NULL').all(id)) dropPhoto(o.photo);
   db.transaction(() => {
     db.prepare('DELETE FROM orders WHERE round_id = ?').run(id);
     db.prepare('DELETE FROM rounds WHERE id = ?').run(id);
@@ -385,6 +407,34 @@ function endRound(id) {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 'loopback'); // Caddy on the host
+// Photo upload needs a bigger body (a JPEG the browser has already shrunk); registered before the 20 kB parser
+app.put('/api/order/:token/photo', express.json({ limit: '900kb' }), (req, res) => {
+  if (!PHOTOS) return res.status(404).json({ error: T(req, 'Bilder är avstängda.', 'Photos are turned off.') });
+  const o = db.prepare('SELECT * FROM orders WHERE pay_token = ?').get(clean(req.params.token, 64));
+  const r = o && db.prepare('SELECT * FROM rounds WHERE id = ?').get(o.round_id);
+  if (!o || !r) return res.status(404).json({ error: T(req, 'Beställningen hittades inte.', 'Order not found.') });
+  if (!r.is_open) return res.status(400).json({ error: T(req, 'Beställningen är stängd.', 'Ordering is closed.') });
+  const b = req.body || {};
+  let photo = null;
+  if (typeof b.data === 'string' && b.data) {
+    const m = b.data.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+    const buf = m ? Buffer.from(m[1], 'base64') : null;
+    if (!buf || buf.length < 100 || buf.length > 650 * 1024 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) {
+      return res.status(400).json({ error: T(req, 'Bilden kunde inte sparas. Prova en annan bild.', 'The photo could not be saved. Try another one.') });
+    }
+    photo = crypto.randomBytes(16).toString('hex') + '.jpg';
+    fs.writeFileSync(path.join(PHOTO_DIR, photo), buf, { mode: 0o600 });
+  } else if (typeof b.url === 'string' && b.url.trim()) {
+    const url = b.url.trim();
+    let ok = false;
+    try { const u = new URL(url); ok = u.protocol === 'https:' && !u.username && !u.password && url.length <= 500; } catch {}
+    if (!ok) return res.status(400).json({ error: T(req, 'Länken måste börja med https://.', 'The link must start with https://.') });
+    photo = url;
+  }
+  dropPhoto(o.photo);
+  db.prepare('UPDATE orders SET photo = ?, updated_at = ? WHERE id = ?').run(photo, new Date().toISOString(), o.id);
+  res.json({ ok: true, photo: photoSrc(photo) });
+});
 app.use(express.json({ limit: '20kb' }));
 
 // Error messages are written in Swedish; English clients (X-Lang: en) get them translated here
@@ -564,6 +614,11 @@ app.get('/r/:slug/andra/:token', page('round.html'));
 app.get('/pay/:token', page('pay.html'));
 app.get('/svar/:token', page('svar.html'));
 app.get('/integritet', page('integritet.html'));
+app.get('/photos/:file', (req, res) => {
+  if (!PHOTO_FILE.test(req.params.file)) return res.status(404).end();
+  res.set({ 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" });
+  res.type('jpg').sendFile(path.join(PHOTO_DIR, req.params.file), (e) => { if (e && !res.headersSent) res.status(404).end(); });
+});
 app.use('/fonts', express.static(path.join(__dirname, 'node_modules', '@fontsource'), { maxAge: '30d', immutable: true }));
 app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
 
@@ -652,7 +707,8 @@ app.get('/api/rounds/:slug', (req, res) => {
   const r = getRoundBySlug(req.params.slug);
   if (!r) return res.status(404).json({ error: 'Sambeställningen finns inte (längre).' });
   // "board": name + dish only, for the sticky notes behind the form (no e-mail, no price)
-  const board = db.prepare('SELECT nr, customer_name AS name, item_name AS item FROM orders WHERE round_id = ? AND cancelled_at IS NULL ORDER BY nr').all(r.id);
+  const board = db.prepare('SELECT nr, customer_name AS name, item_name AS item, photo FROM orders WHERE round_id = ? AND cancelled_at IS NULL ORDER BY nr').all(r.id)
+    .map((x) => ({ ...x, photo: PHOTOS ? photoSrc(x.photo) : null }));
   res.json({ ...publicRound(r), ...menuFor(r.place_id), board, canManage: canManage(req, r) });
 });
 
@@ -767,7 +823,7 @@ function ownOrderView(o, r) {
   return {
     nr: o.nr, cancelled: Boolean(o.cancelled_at), canEdit: Boolean(r.is_open), closeAt: r.close_at, slug: r.slug,
     customerName: o.customer_name, email: o.email, text: orderTextFull(o), totalPrice: o.total_price,
-    selection: o.selection ? JSON.parse(o.selection) : null, creatorName: r.creator_name
+    selection: o.selection ? JSON.parse(o.selection) : null, creatorName: r.creator_name, photo: photoSrc(o.photo)
   };
 }
 app.get('/api/order/:token', (req, res) => {
@@ -832,7 +888,7 @@ app.post('/api/forget', (req, res) => {
   res.json({ ok: true, removed: info.changes });
 });
 
-app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN), hookPeople: getHooks().some((h) => h.people),
+app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN), hookPeople: getHooks().some((h) => h.people), photos: PHOTOS,
   createPinDigits: /^\d{4,8}$/.test(CREATE_PIN) ? CREATE_PIN.length : 0 }));
 
 // Check the start-a-round PIN before the form is filled in (same lockout as other PINs)
@@ -1001,6 +1057,8 @@ app.patch('/api/rounds/:slug/orders/:nr/restore', requireRound, (req, res) => {
 });
 
 app.delete('/api/rounds/:slug/orders/:nr', requireRound, (req, res) => {
+  const gone = db.prepare('SELECT photo FROM orders WHERE round_id = ? AND nr = ?').get(req.round.id, toInt(req.params.nr));
+  if (gone) dropPhoto(gone.photo);
   db.prepare('DELETE FROM orders WHERE round_id = ? AND nr = ?').run(req.round.id, toInt(req.params.nr));
   res.json({ ok: true });
 });
@@ -1784,6 +1842,8 @@ setInterval(autoClose, 20 * 1000).unref();
 setInterval(() => autoRemind().catch(() => {}), 30 * 1000).unref();
 setInterval(() => autoPayRemind().catch((e) => console.error('Betalpåminnelse:', e.message)), 60 * 1000).unref();
 setInterval(autoPurge, 3600 * 1000).unref();
+sweepPhotos();
+setInterval(() => { try { sweepPhotos(); } catch (e) { console.error('Photos:', e.message); } }, 3600 * 1000).unref();
 
 // ---------- Start / stop ----------
 const server = app.listen(PORT, '0.0.0.0', () => console.log(`SamMat kör på port ${PORT}`));
