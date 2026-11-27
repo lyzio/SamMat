@@ -56,7 +56,9 @@
         if (b.photo) {
           return `<div class="note polaroid fx${b.nr % 8}${tape}${fresh}" style="--rot:${rot}deg;${tapeStyle}"><div class="ph"><img src="${esc(b.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.ph').classList.add('broken')" /></div><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
         }
-        return `<div class="note c${b.nr % 5}${tape}${fresh}" style="--rot:${rot}deg;${tapeStyle}"><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
+        // About a third of the plain notes are post-its without tape, with a curled bottom edge
+        const postit = (b.nr * 13) % 3 === 0;
+        return `<div class="note c${b.nr % 5}${tape}${postit ? ' postit' : ''}${fresh}" style="--rot:${rot}deg;${tapeStyle};--curl:${5 + ((b.nr * 7) % 6)}deg"><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
       };
       document.getElementById('wallL').innerHTML = board.filter((_, i) => i % 2 === 0).map(note).join('');
       document.getElementById('wallR').innerHTML = board.filter((_, i) => i % 2 === 1).map(note).join('');

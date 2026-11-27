@@ -378,3 +378,14 @@ details > summary { padding: 4px 0; }
 .note.polaroid b { font-size: calc(1.1rem * var(--hand-k, 1)); }
 .note.polaroid span { font-size: calc(.8rem * var(--hand-k, 1)); color: #444; }
 .note.hand3 b, .note.hand2 b { -webkit-text-stroke: .5px currentColor; } /* single-weight hands: a touch heavier name */
+.note span { text-align: left; } /* name centred, order left-aligned */
+/* Post-it without tape: the bottom edge curls up a little, as if it could fall off */
+.note.postit::before { display: none; }
+.note.postit {
+  margin-top: 4px; border-radius: 1px 1px 3px 3px / 1px 1px 10px 10px;
+  background-image: linear-gradient(to bottom, rgba(255,255,255,0) 72%, rgba(255,255,255,.18) 88%, rgba(0,0,0,.08) 100%);
+  box-shadow: 0 1px 1px rgba(0,0,0,.2), 0 16px 12px -10px rgba(0,0,0,.6), 3px 6px 14px rgba(0,0,0,.25);
+  transform: perspective(500px) rotate(var(--rot, 0deg)) rotateX(var(--curl, 7deg));
+  transform-origin: top center;
+}
+.note.postit:hover { transform: perspective(500px) rotate(0deg) rotateX(3deg) scale(1.06); }
