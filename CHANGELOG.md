@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.9.1 – 2026-11-27
+- If sharp can't load on a platform, the server still starts and the payment mail goes out without the polaroid.
+
 ## 2.9.0 – 2026-11-27
 - Uploaded a photo? The payment mail includes your polaroid as a keepsake, rendered on the server (sharp) with the same film look and handwriting as your note.
 

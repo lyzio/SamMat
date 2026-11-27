@@ -8,7 +8,9 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { renderPolaroid } = require('./lib/polaroid');
+// sharp is only needed for the mail polaroid; if it can't load on this platform, the mail goes without it
+let renderPolaroid = async () => null;
+try { ({ renderPolaroid } = require('./lib/polaroid')); } catch (e) { console.error('Polaroid i mejl avstängt:', e.message); }
 const Database = require('better-sqlite3');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
