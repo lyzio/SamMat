@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.8.2 – 2026-11-27
+- The tape on the notes varies per order: angle, position, length, tint (clear, frosted, brown packing tape, yellowed) and straight or torn edges.
+
 ## 2.8.1 – 2026-11-27
 - Eight film looks on the polaroids instead of four: warm fade, old brown with scratches, 70s cyan-magenta, grainy black & white, expired film, lomo, yearbook and old cinema (letterbox + dust). Film grain on every photo.
 
