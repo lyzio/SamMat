@@ -213,6 +213,7 @@
 
           <label for="email">${L('E-post', 'E-mail')}</label>
           <input id="email" type="email" required maxlength="120" placeholder="${L('namn@exempel.se', 'name@example.com')}" autocomplete="email" value="${esc(ed ? ed.email : store.get('sammat_email'))}" />
+          ${round.companyDomains && round.companyDomains.length ? `<p class="muted" style="margin:4px 0 0;font-size:.82rem">🔒 ${L(`Bara för ${esc(round.companyName)} – e-post som slutar på`, `Only for ${esc(round.companyName)} – e-mail ending in`)} ${round.companyDomains.map((d) => '@' + esc(d)).join(', ')}</p>` : ''}
 
           <div id="last"></div>
 

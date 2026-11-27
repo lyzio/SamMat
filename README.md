@@ -26,7 +26,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 - **Webhooks** till Teams (Workflows, ingen Entra-admin behövs), Slack, Discord, ntfy, Apprise eller valfri JSON-mottagare: ny runda, runda stängd och maten är här.
 - **Mejl** via valfri SMTP-server: *Maten är här*, betalningsmejl, påminnelser och orderlista.
 - **Flera orter/kontor**: koppla varje ställe till en ort. Startsidan får en ortväljare, och webhooks kan skickas per ort. Utan inlagda orter syns inget av det.
-- **Flera företag i samma hus** (t.ex. ett kontorshotell): en runda kan gälla ett företag eller *Alla i huset*. Startsidan får en företagsväljare, och webhooks kan skickas per företag. Det är ett filter, ingen spärr.
+- **Flera företag i samma hus** (t.ex. ett kontorshotell): en runda kan gälla ett företag eller *Alla i huset*. Startsidan får en företagsväljare, och webhooks kan skickas per företag. Ange företagets e-postdomäner (t.ex. `acme.se`) så kan bara de med en sådan adress beställa i företagets rundor. Utan domäner är det bara ett filter.
 - **Installera som app** (PWA) från startsidan: en knapp i Chrome, Edge och Android, och en instruktion för Safari på iPhone, iPad och Mac.
 - **Admin** (`/admin`, egen PIN): ställen, menyer, tillval/bortval och översikt över alla rundor. Klistra in en hel meny på en gång, och lägg in telefon, adress och menylänk per ställe.
 - **Svenska och engelska**: SV/EN-knapp på alla sidor. Mejlen kommer på mottagarens språk.

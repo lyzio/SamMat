@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.10.0 – 2026-11-27
+- Companies can have e-mail domains (e.g. `acme.se, acme.com`). In that company's rounds only those addresses (and subdomains) can order or save changes. Empty = anyone. The order form shows which domains apply.
+
 ## 2.9.1 – 2026-11-27
 - If sharp can't load on a platform, the server still starts and the payment mail goes out without the polaroid.
 

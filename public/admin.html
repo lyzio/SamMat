@@ -58,21 +58,23 @@
       document.getElementById('companies').innerHTML = `
         <div class="card">
           <h2>${L('Företag', 'Companies')}</h2>
-          <p class="muted" style="margin-top:0">${L('Delar flera bolag hus, t.ex. i ett kontorshotell? Lägg in företagen. Den som startar en runda väljer sitt företag eller "Alla i huset", och startsidan får en företagsväljare. Det är ett filter, inte en spärr – "Alla företag" visar allt.',
-            'Several companies in one building, e.g. an office hotel? Add the companies. Whoever starts a round picks their company or "Everyone in the building", and the start page gets a company picker. It is a filter, not a lock – "All companies" shows everything.')}</p>
+          <p class="muted" style="margin-top:0">${L('Delar flera bolag hus, t.ex. i ett kontorshotell? Lägg in företagen. Den som startar en runda väljer sitt företag eller "Alla i huset", och startsidan får en företagsväljare. Anger du <strong>e-postdomäner</strong> (t.ex. <code>acme.se</code>) kan bara de med en sådan adress beställa i företagets rundor. Utan domäner är det bara ett filter.',
+            'Several companies in one building, e.g. an office hotel? Add the companies. Whoever starts a round picks their company or "Everyone in the building", and the start page gets a company picker. With <strong>e-mail domains</strong> (e.g. <code>acme.com</code>) only people with such an address can order in the company\'s rounds. Without domains it is just a filter.')}</p>
           <form id="addComp" class="row">
             <div><label for="cName">${L('Nytt företag', 'New company')}</label><input id="cName" type="text" required maxlength="50" placeholder="${L('T.ex. Acme AB', 'E.g. Acme Ltd')}" /></div>
+            <div><label for="cDom">${L('E-postdomäner', 'E-mail domains')} <span class="muted">(${L('valfritt', 'optional')})</span></label><input id="cDom" type="text" maxlength="300" placeholder="acme.se, acme.com" /></div>
             <button type="submit">${L('Lägg till', 'Add')}</button>
           </form>
           ${data.companies.length ? `<table><tbody>${data.companies.map((c) => `
-            <tr><td>🏢 ${esc(c.name)}</td>
+            <tr><td>🏢 ${esc(c.name)}${c.domains.length ? `<div class="muted" style="font-size:.82rem">🔒 ${c.domains.map((d) => '@' + esc(d)).join(', ')}</div>` : ''}</td>
               <td class="muted">${data.rounds.filter((r) => r.companyId === c.id).length} ${L('pågående rundor', 'ongoing rounds')}</td>
-              <td class="r" style="white-space:nowrap"><button class="secondary small" data-comp-rename="${c.id}">${L('Byt namn', 'Rename')}</button>
+              <td class="r" style="white-space:nowrap"><button class="secondary small" data-comp-dom="${c.id}">${L('Domäner', 'Domains')}</button>
+                <button class="secondary small" data-comp-rename="${c.id}">${L('Byt namn', 'Rename')}</button>
                 <button class="danger small" data-comp-del="${c.id}">${L('Ta bort', 'Delete')}</button></td></tr>`).join('')}</tbody></table>` : ''}
         </div>`;
       document.getElementById('addComp').onsubmit = act(async (e) => {
         e.preventDefault();
-        await api('/api/admin/companies', 'POST', { name: document.getElementById('cName').value });
+        await api('/api/admin/companies', 'POST', { name: document.getElementById('cName').value, domains: document.getElementById('cDom').value });
         hooks = null; await reload(); renderHooks();
       });
     }
@@ -386,6 +388,15 @@
     el.addEventListener('click', act(async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.dataset.compDom) {
+        const c = data.companies.find((x) => x.id === Number(t.dataset.compDom));
+        const v = prompt(L(`E-postdomäner för ${c.name}, separerade med komma.\nBara de med en sådan adress kan beställa i företagets rundor. Tomt = alla.`,
+          `E-mail domains for ${c.name}, separated by commas.\nOnly people with such an address can order in the company's rounds. Empty = everyone.`), c.domains.join(', '));
+        if (v === null) return;
+        await api(`/api/admin/companies/${c.id}`, 'PATCH', { domains: v });
+        hooks = null; await reload(); renderHooks();
+        return;
+      }
       if (t.dataset.compRename) {
         const c = data.companies.find((x) => x.id === Number(t.dataset.compRename));
         const name = prompt(L('Nytt namn', 'New name'), c.name);

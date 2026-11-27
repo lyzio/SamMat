@@ -181,6 +181,7 @@ const listLocations = () => db.prepare('SELECT id, name FROM locations ORDER BY 
 // v2.5: companies (e.g. an office hotel). A round is for one company, or none = everyone in the building.
 db.exec('CREATE TABLE IF NOT EXISTS companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)');
 addCols('rounds', [['company_id', 'INTEGER REFERENCES companies(id) ON DELETE SET NULL']]);
+addCols('companies', [['domains', "TEXT NOT NULL DEFAULT ''"]]); // v2.10: "acme.se,acme.com" – only these e-mails may order in the company's rounds
 // v2.6: drinks (own category, with quantity), add-ons per dish, editable orders
 addCols('menu_items', [['category', "TEXT NOT NULL DEFAULT 'main'"]]);   // 'main' | 'drink'
 addCols('place_options', [['applies_to', 'TEXT']]);                      // JSON array of menu item ids; NULL = all dishes
@@ -197,7 +198,22 @@ addCols('rounds', [['lang', "TEXT NOT NULL DEFAULT 'sv'"]]); // language of the 
 // v2.6: contact info per place (shown to everyone in a round: phone, address, menu link, note)
 addCols('places', [['phone', "TEXT NOT NULL DEFAULT ''"], ['address', "TEXT NOT NULL DEFAULT ''"], ['url', "TEXT NOT NULL DEFAULT ''"], ['note', "TEXT NOT NULL DEFAULT ''"]]);
 
-const listCompanies = () => db.prepare('SELECT id, name FROM companies ORDER BY name COLLATE NOCASE').all();
+const splitDomains = (s) => String(s || '').split(',').map((d) => d.trim()).filter(Boolean);
+const listCompanies = () => db.prepare('SELECT id, name, domains FROM companies ORDER BY name COLLATE NOCASE').all()
+  .map((c) => ({ ...c, domains: splitDomains(c.domains) }));
+// "@Acme.se, acme.com ; sub.acme.se" → "acme.se,acme.com,sub.acme.se" (or an error for anything that isn't a domain)
+function parseDomains(v) {
+  const list = String(Array.isArray(v) ? v.join(',') : v || '').split(/[\s,;]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+  const bad = list.find((d) => !/^(?=.{3,120}$)([a-z0-9](-*[a-z0-9])*\.)+[a-z]{2,}$/.test(d));
+  if (bad) return { error: bad };
+  return { value: [...new Set(list)].slice(0, 10).join(',') };
+}
+// An e-mail fits if its domain is one of the list, or a subdomain of one (mail.acme.se fits acme.se)
+const emailFitsDomains = (email, domains) => {
+  if (!domains.length) return true;
+  const d = String(email).split('@').pop().toLowerCase();
+  return domains.some((x) => d === x || d.endsWith('.' + x));
+};
 const companyIdOr = (v) => { const id = v ? toInt(v) : null; return id && db.prepare('SELECT 1 FROM companies WHERE id = ?').get(id) ? id : null; };
 
 const getSetting = (k, d = null) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k); return r ? r.value : d; };
@@ -309,7 +325,7 @@ function swishFor(order, round, amount) {
   };
 }
 
-const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name, co.name AS company_name,
+const ROUND_SELECT = `SELECT r.*, p.name AS place_name, p.location_id, l.name AS location_name, co.name AS company_name, co.domains AS company_domains,
   p.phone AS place_phone, p.address AS place_address, p.url AS place_url, p.note AS place_note
   FROM rounds r JOIN places p ON p.id = r.place_id LEFT JOIN locations l ON l.id = p.location_id
   LEFT JOIN companies co ON co.id = r.company_id`;
@@ -341,6 +357,7 @@ function publicRound(r) {
     locationId: r.location_id ?? null,
     locationName: r.location_name || '',
     companyId: r.company_id ?? null,
+    companyDomains: splitDomains(r.company_domains),
     place: { phone: r.place_phone || '', address: r.place_address || '', url: r.place_url || '', note: r.place_note || '' },
     companyName: r.company_name || '',
     creatorName: r.creator_name,
@@ -739,6 +756,12 @@ function buildOrder(req, r) {
   const customRemoval = clean(b.customRemoval, 120);
   if (!customerName) return { error: T(req, 'Ange ditt namn.', 'Enter your name.') };
   if (!isEmail(email)) return { error: T(req, 'Ange en giltig e-postadress.', 'Enter a valid e-mail address.') };
+  const domains = splitDomains(r.company_domains);
+  if (!emailFitsDomains(email, domains)) {
+    const list = domains.map((d) => '@' + d).join(', ');
+    return { error: T(req, `Den här beställningen är bara för ${r.company_name} – använd din e-post som slutar på ${list}.`,
+      `This order is only for ${r.company_name} – use your e-mail ending in ${list}.`) };
+  }
   const item = menu.find((m) => m.id === menuItemId);
   if (!item) return { error: T(req, 'Välj en rätt.', 'Choose a dish.') };
 
@@ -1577,17 +1600,26 @@ app.post('/api/admin/companies', requireAdmin, (req, res) => {
   const name = clean(req.body.name, 50);
   if (!name) return res.status(400).json({ error: 'Ange företagets namn.' });
   try {
-    const info = db.prepare('INSERT INTO companies (name) VALUES (?)').run(name);
+    const dom = parseDomains(req.body.domains);
+    if (dom.error) return res.status(400).json({ error: T(req, `Ogiltig domän: ${dom.error}`, `Invalid domain: ${dom.error}`) });
+    const info = db.prepare('INSERT INTO companies (name, domains) VALUES (?, ?)').run(name, dom.value);
     res.status(201).json({ id: Number(info.lastInsertRowid) });
   } catch {
     res.status(400).json({ error: 'Företaget finns redan.' });
   }
 });
 app.patch('/api/admin/companies/:id', requireAdmin, (req, res) => {
+  const id = toInt(req.params.id);
+  if (req.body.domains !== undefined) {
+    const dom = parseDomains(req.body.domains);
+    if (dom.error) return res.status(400).json({ error: T(req, `Ogiltig domän: ${dom.error}`, `Invalid domain: ${dom.error}`) });
+    db.prepare('UPDATE companies SET domains = ? WHERE id = ?').run(dom.value, id);
+    if (req.body.name === undefined) return res.json({ ok: true, domains: splitDomains(dom.value) });
+  }
   const name = clean(req.body.name, 50);
   if (!name) return res.status(400).json({ error: 'Ange företagets namn.' });
   try {
-    db.prepare('UPDATE companies SET name = ? WHERE id = ?').run(name, toInt(req.params.id));
+    db.prepare('UPDATE companies SET name = ? WHERE id = ?').run(name, id);
     res.json({ ok: true });
   } catch {
     res.status(400).json({ error: 'Det namnet finns redan.' });
