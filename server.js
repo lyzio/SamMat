@@ -8,6 +8,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { renderPolaroid } = require('./lib/polaroid');
 const Database = require('better-sqlite3');
 const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
@@ -1215,6 +1216,9 @@ async function payMail(o, r, extra, isReminder = false) {
   ];
   const changedTxt = M(L, `Justerat efter kvittot – menypriset var ${o.total_price} kr.`, `Adjusted to the receipt – the menu price was ${o.total_price} kr.`);
   const qrPng = await QRCode.toBuffer(sw.qrText, { type: 'png', width: 360, margin: 2, errorCorrectionLevel: 'M' });
+  // A keepsake: the order's polaroid, if they uploaded a photo
+  const polaroid = PHOTOS && o.photo && PHOTO_FILE.test(o.photo) && fs.existsSync(path.join(PHOTO_DIR, o.photo))
+    ? await renderPolaroid({ file: path.join(PHOTO_DIR, o.photo), nr: o.nr, name: o.customer_name, item: orderTextFull(o) }) : null;
   const text = [
     M(L, `Hej ${o.customer_name}!`, `Hi ${o.customer_name}!`), '',
     ...(isReminder ? [M(L, 'Påminnelse: vi har inte fått din betalning än.', "Reminder: we haven't received your payment yet."), ''] : []),
@@ -1245,10 +1249,16 @@ async function payMail(o, r, extra, isReminder = false) {
     </div>
     <p style="margin:16px 0">${M(L, 'På mobilen', 'On your phone')}: ${link(payLink, M(L, 'öppna betalningssidan', 'open the payment page'))} ${M(L, 'och tryck på "Öppna Swish".', 'and tap "Open Swish".')}</p>
     ${extraHtml(extra)}
-    <p style="margin:14px 0 0">${M(L, 'Tack!', 'Thanks!')}</p>`, L);
+    <p style="margin:14px 0 0">${M(L, 'Tack!', 'Thanks!')}</p>
+    ${polaroid ? `<div style="margin:26px 0 0;text-align:center">
+      <img src="cid:polaroid" width="270" alt="${escHtml(M(L, 'Din polaroid', 'Your polaroid'))}" style="display:inline-block;border:0;width:270px;max-width:100%;height:auto">
+      <div style="color:#5b6570;font-size:13px;margin-top:2px">${M(L, 'Ett minne av lunchen', 'A keepsake from lunch')} 📸</div></div>` : ''}`, L);
   return {
     subject, text, html,
-    attachments: [{ filename: 'swish-qr.png', content: qrPng, contentType: 'image/png', cid: 'swishqr', contentDisposition: 'inline' }]
+    attachments: [
+      { filename: 'swish-qr.png', content: qrPng, contentType: 'image/png', cid: 'swishqr', contentDisposition: 'inline' },
+      ...(polaroid ? [{ filename: `polaroid-${o.nr}.jpg`, content: polaroid, contentType: 'image/jpeg', cid: 'polaroid', contentDisposition: 'inline' }] : [])
+    ]
   };
 }
 

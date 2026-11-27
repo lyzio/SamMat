@@ -11,7 +11,7 @@ Folk beställer själva utan konto, du får en färdig orderlista till restauran
 
 - **Vem som helst startar en runda** och får en länk att dela och en slumpad 4-siffrig PIN att hantera den med. Flera rundor kan pågå samtidigt.
 - **Ingen inloggning för att beställa**: namn, e-post, rätt, tillval och bortval. Varje beställning blir en lapp på beställningssidan.
-- **Polaroid**: lägg till en bild på din lapp, uppladdad eller som länk. Lappen blir en polaroid med gammal filmkänsla.
+- **Polaroid**: lägg till en bild på din lapp, uppladdad eller som länk. Lappen blir en polaroid med gammal filmkänsla, och den följer med i betalningsmejlet som ett minne.
 - **Dricka med antal**: dryck läggs till med +/−. På orderlistan samlas den längst ner, eftersom alla hämtar sin dryck själva.
 - **Tillval per rätt**: tillval och bortval kan begränsas till vissa rätter.
 - **Ändra eller avboka själv**: efter beställningen visas en länk som fungerar tills beställningen stänger. Webbläsaren kommer ihåg den.

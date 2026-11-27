@@ -16,6 +16,7 @@ ENV NODE_ENV=production \
     TZ=Europe/Stockholm
 COPY --from=build /app/node_modules ./node_modules
 COPY package.json server.js ./
+COPY lib ./lib
 COPY public ./public
 LABEL org.opencontainers.image.title="Sammat" \
       org.opencontainers.image.description="Sambeställning av mat med Swish" \

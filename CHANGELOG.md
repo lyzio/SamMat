@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.9.0 – 2026-11-27
+- Uploaded a photo? The payment mail includes your polaroid as a keepsake, rendered on the server (sharp) with the same film look and handwriting as your note.
+
 ## 2.8.4 – 2026-11-27
 - Notes: the name is centred and the order left-aligned. About a third of the plain notes are post-its without tape, with the bottom edge curling up.
 
