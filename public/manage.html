@@ -260,7 +260,14 @@
     function renderMail() {
       const box = document.getElementById('mail');
       if (!data.mailConfigured) {
-        box.innerHTML = `<div class="card no-print"><h2>${L('Mejl', 'Mail')}</h2><p class="muted">${L('Mejl är inte konfigurerat på servern.', 'Mail is not configured on the server.')}</p></div>`;
+        box.innerHTML = `<div class="card no-print"><h2>${L('Meddela', 'Notify')}</h2><p class="muted" style="margin-top:0">${L('Mejl är inte konfigurerat på servern. "Maten är här" skickas bara till de webhooks som är inställda (t.ex. Teams).', 'Mail is not configured on the server. "The food is here" only goes to the configured webhooks (e.g. Teams).')}</p>
+          <label for="mailExtra">${L('Extra rad (valfritt)', 'Extra line (optional)')}</label>
+          <textarea id="mailExtra" rows="2" maxlength="500" placeholder="${L('T.ex. Maten står i köket på plan 3', 'E.g. The food is in the kitchen on the 3rd floor')}"></textarea>
+          <div class="row" style="margin-top:12px"><button id="foodHook" style="flex:0 0 auto">🍽️ ${L('Maten är här', 'The food is here')}</button></div></div>`;
+        document.getElementById('foodHook').onclick = act(async () => {
+          await api(`${base}/mail/food`, 'POST', { extra: document.getElementById('mailExtra').value.trim() });
+          alert(L('Skickat till webhooks.', 'Sent to webhooks.'));
+        });
         return;
       }
       box.innerHTML = `

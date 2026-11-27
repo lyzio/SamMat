@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.0 – 2026-11-27
+- Teams Workflows / Power Automate in tenants that do not allow "Anyone": set `FLOW_TENANT_ID`, `FLOW_CLIENT_ID` and `FLOW_CLIENT_SECRET` (an Entra app). SamMat then signs those webhook calls with a client-credentials token.
+- Webhook option "Skicka med deltagarna" (teams/json): on "food is here" and "round closed" the payload gets `people` (name, email, order, language and a ready message in their language), for a private Teams message to each person. The privacy page mentions it when it is on.
+- "Maten är här" works without mail configured (webhooks only).
+
 ## 2.6.4 – 2026-11-27
 - Teams Workflows: clearer error on HTTP 401/403 (the trigger must allow "Anyone"), with a hint in `/admin`. README shows how to send to a person privately.
 

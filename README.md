@@ -66,6 +66,7 @@ Peka din reverse proxy på `127.0.0.1:8102`. Gå sedan till `/admin`, logga in m
 | `MAX_ACTIVE_ROUNDS` | Max antal rundor samtidigt (standard 30). |
 | `CREATE_PIN` | Kräv en PIN för att starta en runda (tomt = vem som helst kan). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra. |
 | `BACKUP_DAYS` | Daglig backup i `data/backups/`, sparas så många dagar (standard 7, 0 = av). |
+| `FLOW_TENANT_ID`, `FLOW_CLIENT_ID`, `FLOW_CLIENT_SECRET` | Entra-app för Teams Workflows när *Vem som helst* inte är tillåtet. Se *Teams via Workflows*. |
 | `ORDER_LIMIT` | Max antal nya beställningar per IP och 10 minuter (standard 20). |
 | `FAVORITE_DAYS` | Hur länge "samma som förra gången" sparas efter senaste beställningen (standard 180). |
 
@@ -90,10 +91,36 @@ Händelser: `round.created`, `round.closed` och `food.arrived`.
 
 ### Teams via Workflows
 
-- **Vem kan utlösa arbetsflödet?** Välj *Vem som helst* (Anyone). Med *Alla användare i min klientorganisation* kräver Microsoft inloggning och SamMat får `HTTP 401`. Adressen innehåller en hemlig signatur, så behandla den som ett lösenord.
-- **Till en kanal:** använd mallen *Post to a channel when a webhook request is received* och formatet `teams`.
-- **Privat till en person (chatt):** använd åtgärden *Publicera kort i en chatt eller kanal* (Post card in a chat or channel), med *Publicera som: Flödesrobot* och *Publicera i: Chatta med Flödesrobot*. Som *Adaptivt kort*, skriv uttrycket `triggerBody()?['attachments']?[0]?['content']`.
-  Vill du hellre skicka vanlig text med *Meddela en person privat*? Välj då formatet `json` i SamMat och skriv uttrycket `concat(triggerBody()?['text'], ' ', triggerBody()?['link'])` som meddelandetext. Med *Utlösare: Brödtext* får du rå JSON.
+**Vem kan utlösa arbetsflödet?**
+- Om ni kan välja *Vem som helst* (Anyone) räcker det. Adressen innehåller en hemlig signatur, så behandla den som ett lösenord.
+- Många organisationer har stängt av *Vem som helst*. Då kräver arbetsflödet en Entra-token, annars blir det `HTTP 401`. Be IT om en appregistrering och sätt i `sammat.env`:
+
+  ```
+  FLOW_TENANT_ID=<katalog-ID (tenant)>
+  FLOW_CLIENT_ID=<program-ID (client) för appen>
+  FLOW_CLIENT_SECRET=<klienthemlighet>
+  ```
+
+  SamMat hämtar då en token (client credentials, scope `https://service.flow.microsoft.com//.default`) och skickar den med alla webhooks till Power Automate/Workflows. Behörigheter i Graph behövs inte.
+  I utlösaren väljer du *Specifika användare i min klientorganisation* och anger **objekt-ID för appens tjänsthuvudnamn** (Enterprise application → Object ID), eller behåller *Alla användare i min klientorganisation*.
+  Om det ändå nekas: lägg till appen som medägare till arbetsflödet.
+
+**Till en kanal:** använd mallen *Post to a channel when a webhook request is received* och formatet `teams`.
+
+**Personligt meddelande till alla som beställt** (t.ex. när maten är här):
+1. Kryssa i *Skicka med deltagarna* på webhooken i `/admin` (format `teams` eller `json`). Vid *Maten är här* och *Runda stängd* får anropet då en lista `people`:
+   ```json
+   "people": [{ "nr": 1, "name": "Anna", "email": "anna@firma.se", "order": "Vesuvio", "lang": "sv",
+                "message": "🍽️ Maten från Pizzeria Palma är här! Din beställning: #1 Vesuvio" }]
+   ```
+2. Lägg till *Tillämpa på varje* (Apply to each) på `triggerBody()?['people']` i arbetsflödet.
+3. Inuti den: *Publicera meddelande i en chatt eller kanal* (Post message in a chat or channel), med *Publicera som: Flödesrobot* och *Publicera i: Chatta med Flödesrobot*.
+   Som *Mottagare*, skriv `items('Tillämpa_på_varje')?['email']`. Som *Meddelande*, skriv `items('Tillämpa_på_varje')?['message']`.
+4. Varje persons e-post måste vara deras Teams-adress (UPN). *Testa* skickar en exempelperson med den e-post du anger.
+
+Med detta lämnar e-postadresserna SamMat. Integritetssidan säger det automatiskt när funktionen är på.
+
+**Privat till en person med vanlig text:** välj formatet `json` och skriv `concat(triggerBody()?['text'], ' ', triggerBody()?['link'])` som meddelandetext. Med *Utlösare: Brödtext* får man rå JSON.
 
 ### Apprise eller ntfy i en egen container
 

@@ -20,7 +20,15 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replac
 const PURGE_DAYS = Number(process.env.PURGE_DAYS || 7); // rounds older than this are ended and deleted
 const MAX_ACTIVE_ROUNDS = Number(process.env.MAX_ACTIVE_ROUNDS || 30);
 const FAVORITE_DAYS = Number(process.env.FAVORITE_DAYS || 180);
-const CREATE_PIN = String(process.env.CREATE_PIN || '').trim();          // optional: PIN needed to start a round
+const CREATE_PIN = String(process.env.CREATE_PIN || '').trim();
+// Optional: Entra app (client credentials) for Teams Workflows / Power Automate triggers that only accept users in the tenant
+const FLOW_AUTH = {
+  tenant: String(process.env.FLOW_TENANT_ID || '').trim(),
+  clientId: String(process.env.FLOW_CLIENT_ID || '').trim(),
+  secret: String(process.env.FLOW_CLIENT_SECRET || '').trim(),
+  scope: String(process.env.FLOW_SCOPE || 'https://service.flow.microsoft.com//.default').trim(),
+  tokenUrl: String(process.env.FLOW_TOKEN_URL || '').trim() // optional override (other clouds)
+};          // optional: PIN needed to start a round
 const BACKUP_DAYS = Number(process.env.BACKUP_DAYS ?? 7);                 // daily backup kept this many days; 0 = off // "same as last time" is kept this long after the last order
 const SESSION_HOURS = 24;
 
@@ -824,7 +832,7 @@ app.post('/api/forget', (req, res) => {
   res.json({ ok: true, removed: info.changes });
 });
 
-app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN),
+app.get('/api/info', (req, res) => res.json({ favoriteDays: FAVORITE_DAYS, purgeDays: PURGE_DAYS, backupDays: BACKUP_DAYS, mailConfigured, createPin: Boolean(CREATE_PIN), hookPeople: getHooks().some((h) => h.people),
   createPinDigits: /^\d{4,8}$/.test(CREATE_PIN) ? CREATE_PIN.length : 0 }));
 
 // Check the start-a-round PIN before the form is filled in (same lockout as other PINs)
@@ -1212,9 +1220,10 @@ function mailGuard(req, res) {
 }
 
 app.post('/api/rounds/:slug/mail/food', requireRound, async (req, res) => {
-  if (!mailGuard(req, res)) return;
   const r = req.round;
   const extra = clean(req.body.extra, 500);
+  if (!mailConfigured) { emit('food.arrived', r, { extra }); return res.json({ sent: 0, failed: 0, webhookOnly: true }); }
+  if (!mailGuard(req, res)) return;
   sendingRounds.add(r.id);
   emit('food.arrived', r, { extra });
   try { res.json(await sendBatch(ordersOf(r.id), (o) => foodMail(o, r, extra), 'food_mail_at')); } finally { sendingRounds.delete(r.id); }
@@ -1324,6 +1333,36 @@ function hookTarget(raw) {
   return { u, headers };
 }
 
+// Optional per hook ("people"): everyone who ordered, with a ready message in their own language,
+// so e.g. a Teams workflow can loop over them and message each person privately.
+const PEOPLE_EVENTS = ['food.arrived', 'round.closed'];
+function peopleOf(r, event, extra) {
+  return ordersOf(r.id).map((o) => {
+    const L = o.lang === 'en' ? 'en' : 'sv';
+    const mine = `#${o.nr} ${orderTextFull(o)}`;
+    const message = event === 'food.arrived'
+      ? `🍽️ ${M(L, `Maten från ${r.place_name} är här!`, `The food from ${r.place_name} is here!`)} ${M(L, 'Din beställning', 'Your order')}: ${mine}${extra && extra.extra ? `. ${extra.extra}` : ''}`
+      : `🔒 ${M(L, `Beställningen till ${r.place_name} är stängd.`, `Ordering from ${r.place_name} is closed.`)} ${M(L, 'Du har beställt', 'You ordered')}: ${mine}`;
+    return { nr: o.nr, name: o.customer_name, email: o.email, order: orderTextFull(o), lang: L, message };
+  });
+}
+
+// Bearer token for Power Automate (cached until a minute before it expires)
+let flowToken = null;
+const isFlowHost = (host) => /powerplatform\.com$|logic\.azure\.com$|flow\.microsoft\.com$/i.test(host) || (process.env.FLOW_TEST_HOST && host === process.env.FLOW_TEST_HOST);
+async function getFlowToken() {
+  if (flowToken && flowToken.exp > Date.now() + 60000) return flowToken.value;
+  const res = await fetch(FLOW_AUTH.tokenUrl || `https://login.microsoftonline.com/${encodeURIComponent(FLOW_AUTH.tenant)}/oauth2/v2.0/token`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(8000),
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: FLOW_AUTH.clientId, client_secret: FLOW_AUTH.secret, scope: FLOW_AUTH.scope })
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || !out.access_token) throw new Error(`Entra: ${out.error_description ? out.error_description.split('\r\n')[0] : 'HTTP ' + res.status}`);
+  flowToken = { value: out.access_token, exp: Date.now() + (Number(out.expires_in) || 3600) * 1000 };
+  return flowToken.value;
+}
+const flowAuthConfigured = () => Boolean(FLOW_AUTH.tenant && FLOW_AUTH.clientId && FLOW_AUTH.secret);
+
 async function postHook(h, event, r, extra) {
   const text = EVENT_TEXT[event](r, extra, h.lang === 'en' ? 'en' : 'sv');
   let { u, headers } = hookTarget(h.url); let payload;
@@ -1336,15 +1375,21 @@ async function postHook(h, event, r, extra) {
     u = new URL(`${u.origin}/${parts.join('/')}`);
   } else {
     payload = hookPayload(h.format, event, r, text, h.lang);
+    if (h.people && ['teams', 'json'].includes(h.format) && PEOPLE_EVENTS.includes(event)) {
+      payload.people = extra && extra.testPeople ? extra.testPeople : peopleOf(r, event, extra);
+    }
   }
+  if (!headers.Authorization && flowAuthConfigured() && isFlowHost(u.hostname)) headers.Authorization = `Bearer ${await getFlowToken()}`;
   const res = await fetch(u, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(8000) });
   if (!res.ok) {
     // Teams Workflows (Power Automate) answers 401/403 when the trigger only allows signed-in users
     const pa = /powerplatform\.com|logic\.azure\.com|powerautomate/i.test(u.hostname);
     if (pa && (res.status === 401 || res.status === 403)) {
-      throw new Error(`HTTP ${res.status} – ${h.lang === 'en'
-        ? 'the workflow only accepts signed-in users. In the trigger, set "Who can trigger the flow?" to "Anyone".'
-        : 'arbetsflödet tar bara emot inloggade användare. Ändra "Vem kan utlösa arbetsflödet?" till "Vem som helst" i utlösaren.'}`);
+      throw new Error(`HTTP ${res.status} – ${flowAuthConfigured()
+        ? (h.lang === 'en' ? 'SamMat sent an Entra token but the workflow refused it. Check that the app is allowed in the trigger (Specific users: the service principal\'s object ID).'
+          : 'SamMat skickade en Entra-token men arbetsflödet nekade. Kontrollera att appen är tillåten i utlösaren (Specifika användare: tjänstens objekt-ID).')
+        : (h.lang === 'en' ? 'the workflow only accepts signed-in users. Set "Who can trigger the flow?" to "Anyone", or set FLOW_TENANT_ID/FLOW_CLIENT_ID/FLOW_CLIENT_SECRET (see the docs).'
+          : 'arbetsflödet tar bara emot inloggade användare. Ändra "Vem kan utlösa arbetsflödet?" till "Vem som helst", eller sätt FLOW_TENANT_ID/FLOW_CLIENT_ID/FLOW_CLIENT_SECRET (se dokumentationen).')}`);
     }
     throw new Error(`HTTP ${res.status}`);
   }
@@ -1605,7 +1650,7 @@ app.put('/api/admin/webhooks', requireAdmin, (req, res) => {
     const url = clean(h.url, 1000);
     if (!/^https?:\/\/\S+$/.test(url)) return res.status(400).json({ error: `Ogiltig adress (måste börja med http:// eller https://): ${url.slice(0, 50)}` });
     hooks.push({
-      url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json', lang: h.lang === 'en' ? 'en' : 'sv',
+      url, format: HOOK_FORMATS.includes(h.format) ? h.format : 'json', lang: h.lang === 'en' ? 'en' : 'sv', people: Boolean(h.people),
       events: Array.isArray(h.events) ? h.events.filter((e) => HOOK_EVENTS.includes(e)) : HOOK_EVENTS,
       locations: Array.isArray(h.locations) ? h.locations.map(toInt).filter((l) => db.prepare('SELECT 1 FROM locations WHERE id = ?').get(l)) : [],
       companies: Array.isArray(h.companies) ? h.companies.map(toInt).filter((c) => db.prepare('SELECT 1 FROM companies WHERE id = ?').get(c)) : []
@@ -1620,7 +1665,15 @@ app.post('/api/admin/webhooks/test', requireAdmin, async (req, res) => {
   const fake = { slug: 'test', name: 'Testrunda', place_name: 'Pizzeria Test', creator_name: 'SamMat', event_date: todayStr(),
     close_at: null, food_eta: '12:00', is_open: 1 };
   try {
-    await postHook({ url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json', lang: req.body.lang === 'en' ? 'en' : 'sv' }, 'round.created', fake);
+    const h = { url, format: HOOK_FORMATS.includes(req.body.format) ? req.body.format : 'json', lang: req.body.lang === 'en' ? 'en' : 'sv', people: Boolean(req.body.people) };
+    if (h.people && ['teams', 'json'].includes(h.format)) {
+      // Test the per-person loop: "food is here" with one example person (the address given in the test, or a placeholder)
+      const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(req.body.testEmail || '')) ? String(req.body.testEmail) : 'test@example.com';
+      const message = `🍽️ ${M(h.lang, 'Maten från Pizzeria Test är här! Din beställning', 'The food from Pizzeria Test is here! Your order')}: #1 Vesuvio`;
+      await postHook(h, 'food.arrived', fake, { testPeople: [{ nr: 1, name: 'Test', email, order: 'Vesuvio', lang: h.lang, message }] });
+    } else {
+      await postHook(h, 'round.created', fake);
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(502).json({ error: 'Misslyckades: ' + e.message });

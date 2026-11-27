@@ -26,7 +26,8 @@
         (påminnelse, "maten är här" och betalning). Namn och rätt syns som en lapp på beställningssidan för alla med länken.</p>
       <p>När rundan avslutas raderas allt om den, och rundor raderas automatiskt ${i.purgeDays} dagar efter sitt datum.
         Raderingen skriver över datan i databasfilen, så den ligger inte kvar.
-        ${i.backupDays ? `Servern tar en säkerhetskopia per dygn som sparas i ${i.backupDays} dagar, så en raderad beställning kan finnas kvar i en kopia så länge.` : ''}</p>
+        ${i.backupDays ? `Servern tar en säkerhetskopia per dygn som sparas i ${i.backupDays} dagar, så en raderad beställning kan finnas kvar i en kopia så länge.` : ''}
+        ${i.hookPeople ? `Den här installationen skickar namn, e-post och beställning vidare till en intern tjänst (t.ex. Teams) när maten är här eller beställningen stängs, så att var och en kan få ett personligt meddelande.` : ''}</p>
       <p>Länken för att ändra din beställning fungerar bara för den som har den. Den sparas i din webbläsare så att du hittar den igen.</p>
       <h2>"Kom ihåg min beställning"</h2>
       <p>Bara om du kryssar i rutan. Då sparas, per ställe:</p>
@@ -46,7 +47,8 @@
         (reminder, "the food is here" and payment). Your name and dish show as a note on the order page for everyone with the link.</p>
       <p>When the round ends, everything about it is deleted, and rounds are deleted automatically ${i.purgeDays} days after their date.
         The deletion overwrites the data in the database file, so it doesn't linger.
-        ${i.backupDays ? `The server makes one backup a day, kept for ${i.backupDays} days, so a deleted order can remain in a backup that long.` : ''}</p>
+        ${i.backupDays ? `The server makes one backup a day, kept for ${i.backupDays} days, so a deleted order can remain in a backup that long.` : ''}
+        ${i.hookPeople ? `This installation passes name, email and order on to an internal service (e.g. Teams) when the food arrives or ordering closes, so each person can get a private message.` : ''}</p>
       <p>The link to change your order only works for whoever has it. It is saved in your browser so you can find it again.</p>
       <h2>"Remember my order"</h2>
       <p>Only if you tick the box. Then, per place, it stores:</p>

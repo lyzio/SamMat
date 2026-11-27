@@ -316,6 +316,9 @@
             ${hooks.companies.map((c) => `<label class="check" style="margin:0;flex:0 0 auto;min-width:0"><input type="checkbox" class="h-comp" value="${c.id}" ${(h.companies || []).includes(c.id) ? 'checked' : ''} /><span>${esc(c.name)}</span></label>`).join('')}
             <span class="muted" style="flex:0 0 auto;min-width:0;font-size:.8rem">(${L('ingen vald = alla', 'none = all')})</span>
           </div>` : ''}
+          ${['teams', 'json'].includes(h.format) ? `<label class="check" style="margin:8px 0 0"><input type="checkbox" class="h-people" ${h.people ? 'checked' : ''} />
+            <span>${L('Skicka med deltagarna (namn, e-post, beställning) vid "Maten är här" och "Runda stängd"', 'Include the people who ordered (name, email, order) on "Food is here" and "Round closed"')}
+            <br><span class="muted" style="font-size:.8rem">${L('För att t.ex. skicka ett personligt Teams-meddelande till var och en. E-postadresserna lämnar då SamMat – se dokumentationen.', 'To e.g. send each person a private Teams message. The email addresses then leave SamMat – see the docs.')}</span></span></label>` : ''}
           <div class="row" style="margin-top:8px;align-items:center">
             <span style="flex:1"></span>
             <button type="button" class="secondary small" data-hook-test="${i}" style="flex:0 0 auto">${L('Testa', 'Test')}</button>
@@ -339,8 +342,11 @@
         lang: d.querySelector('.h-lang').value,
         events: [...d.querySelectorAll('.h-ev:checked')].map((c) => c.value),
         locations: [...d.querySelectorAll('.h-loc:checked')].map((c) => Number(c.value)),
-        companies: [...d.querySelectorAll('.h-comp:checked')].map((c) => Number(c.value))
+        companies: [...d.querySelectorAll('.h-comp:checked')].map((c) => Number(c.value)),
+        people: d.querySelector('.h-people') ? d.querySelector('.h-people').checked : Boolean((hooks.hooks[Number(d.dataset.i)] || {}).people)
       }));
+      // Show/hide the "people" option when the format changes
+      document.querySelectorAll('.h-format').forEach((s) => { s.onchange = () => { hooks.hooks = collect(); renderHooks(); }; });
       document.getElementById('hookAdd').onclick = () => { hooks.hooks = [...collect(), { url: '', format: 'teams', lang: LANG, events: hooks.events }]; renderHooks(); };
       document.getElementById('hookSave').onclick = act(async () => {
         const r = await api('/api/admin/webhooks', 'PUT', { hooks: collect().filter((h) => h.url) });
@@ -350,7 +356,12 @@
       document.querySelectorAll('[data-hook-test]').forEach((b) => {
         b.onclick = act(async () => {
           const h = collect()[Number(b.dataset.hookTest)];
-          await api('/api/admin/webhooks/test', 'POST', { url: h.url, format: h.format, lang: h.lang });
+          let testEmail;
+          if (h.people) {
+            testEmail = prompt(L('Testa "Maten är här" med en exempelperson. Vilken e-post (t.ex. din egen Teams-adress)?', 'Test "Food is here" with one example person. Which email (e.g. your own Teams address)?'), store.get('sammat_email') || '');
+            if (testEmail === null) return;
+          }
+          await api('/api/admin/webhooks/test', 'POST', { url: h.url, format: h.format, lang: h.lang, people: h.people, testEmail });
           alert(L('Testmeddelande skickat.', 'Test message sent.'));
         });
       });

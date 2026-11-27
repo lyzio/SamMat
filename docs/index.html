@@ -202,6 +202,7 @@ networks:
       <tr><td><code>MAX_ACTIVE_ROUNDS</code></td><td>Max antal rundor samtidigt (standard 30).</td></tr>
       <tr><td><code>CREATE_PIN</code></td><td>Kräv en PIN för att starta en runda (tomt = vem som helst). Den frågas efter först, innan formuläret. 4–8 siffror ger en ruta per siffra.</td></tr>
       <tr><td><code>BACKUP_DAYS</code></td><td>Daglig backup i <code>data/backups/</code>, sparas så många dagar (standard 7, 0 = av).</td></tr>
+      <tr><td><code>FLOW_TENANT_ID</code>, <code>FLOW_CLIENT_ID</code>, <code>FLOW_CLIENT_SECRET</code></td><td>Entra-app för Teams Workflows när "Vem som helst" inte är tillåtet. Se README.</td></tr>
       <tr><td><code>ORDER_LIMIT</code></td><td>Max nya beställningar per IP och 10 minuter (standard 20).</td></tr>
       <tr><td><code>FAVORITE_DAYS</code></td><td>Hur länge "samma som förra gången" sparas (standard 180 dagar).</td></tr>
     </table>
