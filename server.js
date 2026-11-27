@@ -1338,7 +1338,16 @@ async function postHook(h, event, r, extra) {
     payload = hookPayload(h.format, event, r, text, h.lang);
   }
   const res = await fetch(u, { method: 'POST', headers, body: JSON.stringify(payload), signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    // Teams Workflows (Power Automate) answers 401/403 when the trigger only allows signed-in users
+    const pa = /powerplatform\.com|logic\.azure\.com|powerautomate/i.test(u.hostname);
+    if (pa && (res.status === 401 || res.status === 403)) {
+      throw new Error(`HTTP ${res.status} – ${h.lang === 'en'
+        ? 'the workflow only accepts signed-in users. In the trigger, set "Who can trigger the flow?" to "Anyone".'
+        : 'arbetsflödet tar bara emot inloggade användare. Ändra "Vem kan utlösa arbetsflödet?" till "Vem som helst" i utlösaren.'}`);
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
 }
 
 function emit(event, r, extra) {

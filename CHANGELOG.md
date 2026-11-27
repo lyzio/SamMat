@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.6.4 – 2026-11-27
+- Teams Workflows: clearer error on HTTP 401/403 (the trigger must allow "Anyone"), with a hint in `/admin`. README shows how to send to a person privately.
+
 ## 2.6.3 – 2026-11-26
 - With `CREATE_PIN` set, `/ny` starts with a page holding only the PIN (one box per digit, paste works, submits when full). The form shows only after a correct PIN, and a remembered PIN skips the step. New endpoint `POST /api/create-pin`, with the same lockout as other PINs.
 

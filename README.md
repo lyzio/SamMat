@@ -88,6 +88,13 @@ Webhooks ställs in under `/admin`. Format: `teams` (Adaptive Card för Teams *W
 
 Händelser: `round.created`, `round.closed` och `food.arrived`.
 
+### Teams via Workflows
+
+- **Vem kan utlösa arbetsflödet?** Välj *Vem som helst* (Anyone). Med *Alla användare i min klientorganisation* kräver Microsoft inloggning och SamMat får `HTTP 401`. Adressen innehåller en hemlig signatur, så behandla den som ett lösenord.
+- **Till en kanal:** använd mallen *Post to a channel when a webhook request is received* och formatet `teams`.
+- **Privat till en person (chatt):** använd åtgärden *Publicera kort i en chatt eller kanal* (Post card in a chat or channel), med *Publicera som: Flödesrobot* och *Publicera i: Chatta med Flödesrobot*. Som *Adaptivt kort*, skriv uttrycket `triggerBody()?['attachments']?[0]?['content']`.
+  Vill du hellre skicka vanlig text med *Meddela en person privat*? Välj då formatet `json` i SamMat och skriv uttrycket `concat(triggerBody()?['text'], ' ', triggerBody()?['link'])` som meddelandetext. Med *Utlösare: Brödtext* får du rå JSON.
+
 ### Apprise eller ntfy i en egen container
 
 Kör du Apprise (eller ntfy) som en container som inte är exponerad utåt, kan SamMat ändå nå den. Lägg båda containrarna på ett gemensamt nätverk och använd containerns namn och interna port i webhook-adressen. Ingen port behöver publiceras.
