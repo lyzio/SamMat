@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.8.1 – 2026-11-27
+- Eight film looks on the polaroids instead of four: warm fade, old brown with scratches, 70s cyan-magenta, grainy black & white, expired film, lomo, yearbook and old cinema (letterbox + dust). Film grain on every photo.
+
 ## 2.8.0 – 2026-11-27
 - Photo on your note: upload one (shrunk to a small JPEG in the browser, stored in `<data>/photos/`) or paste an https link. The note becomes a polaroid with an old film look, which varies between four looks. It can be changed or removed with the edit link, and is deleted with the order and the round. `PHOTOS=0` turns it off.
 - Fix: the start page no longer jumps straight into the round when exactly one is open, so you can always start a new one.

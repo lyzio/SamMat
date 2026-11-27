@@ -45,7 +45,7 @@
         const rot = ((b.nr * 37) % 11) - 5; // stable tilt per order
         const fresh = seen.size && !seen.has(b.nr) ? ' new' : '';
         if (b.photo) {
-          return `<div class="note polaroid fx${b.nr % 4}${fresh}" style="--rot:${rot}deg"><div class="ph"><img src="${esc(b.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.ph').classList.add('broken')" /></div><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
+          return `<div class="note polaroid fx${b.nr % 8}${fresh}" style="--rot:${rot}deg"><div class="ph"><img src="${esc(b.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.ph').classList.add('broken')" /></div><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
         }
         return `<div class="note c${b.nr % 5}${fresh}" style="--rot:${rot}deg"><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
       };
