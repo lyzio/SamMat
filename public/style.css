@@ -7,6 +7,14 @@
 @font-face { font-family: 'Nunito Sans'; font-weight: 600; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-600-normal.woff2') format('woff2'); }
 @font-face { font-family: 'Nunito Sans'; font-weight: 700; font-display: swap; src: url('/fonts/nunito-sans/files/nunito-sans-latin-700-normal.woff2') format('woff2'); }
 
+/* Handwriting for the notes (v2.8.3) */
+@font-face { font-family: 'Caveat'; font-weight: 400; font-display: swap; src: url('/fonts/caveat/files/caveat-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Caveat'; font-weight: 700; font-display: swap; src: url('/fonts/caveat/files/caveat-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Kalam'; font-weight: 400; font-display: swap; src: url('/fonts/kalam/files/kalam-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Kalam'; font-weight: 700; font-display: swap; src: url('/fonts/kalam/files/kalam-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Patrick Hand'; font-weight: 400; font-display: swap; src: url('/fonts/patrick-hand/files/patrick-hand-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Architects Daughter'; font-weight: 400; font-display: swap; src: url('/fonts/architects-daughter/files/architects-daughter-latin-400-normal.woff2') format('woff2'); }
+
 :root {
   --bg: #1e272e;
   --card: #273139;
@@ -358,3 +366,15 @@ details > summary { padding: 4px 0; }
 .note.polaroid.fx7 .ph::after { background: linear-gradient(#000 0 9%, transparent 9% 91%, #000 91%), linear-gradient(135deg, rgba(0, 120, 140, .3), rgba(255, 140, 40, .25)); mix-blend-mode: normal; }
 /* Aged frames on some looks */
 .note.polaroid.fx4, .note.polaroid.fx5 { background: #f7f1e1; }
+
+/* Handwritten notes: four hands, picked per order; name centred */
+.note { text-align: center; }
+.note b { font-family: var(--hand, 'Caveat'), cursive; font-weight: var(--hand-w, 700); font-size: calc(1.15rem * var(--hand-k, 1)); line-height: 1.05; margin-bottom: 4px; }
+.note span { display: block; font-family: var(--hand, 'Caveat'), cursive; font-weight: 400; font-size: calc(.86rem * var(--hand-k, 1)); line-height: 1.15; }
+.note.hand0 { --hand: 'Caveat'; --hand-w: 700; --hand-k: 1.32; }
+.note.hand1 { --hand: 'Kalam'; --hand-w: 700; --hand-k: 1; }
+.note.hand2 { --hand: 'Patrick Hand'; --hand-w: 400; --hand-k: 1.12; }
+.note.hand3 { --hand: 'Architects Daughter'; --hand-w: 400; --hand-k: .98; }
+.note.polaroid b { font-size: calc(1.1rem * var(--hand-k, 1)); }
+.note.polaroid span { font-size: calc(.8rem * var(--hand-k, 1)); color: #444; }
+.note.hand3 b, .note.hand2 b { -webkit-text-stroke: .5px currentColor; } /* single-weight hands: a touch heavier name */

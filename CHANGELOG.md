@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.8.3 – 2026-11-27
+- Handwritten notes: Caveat, Kalam, Patrick Hand or Architects Daughter (served locally from @fontsource). The hand follows the person's name, so the same person always writes the same way. Name and dish are centred.
+
 ## 2.8.2 – 2026-11-27
 - The tape on the notes varies per order: angle, position, length, tint (clear, frosted, brown packing tape, yellowed) and straight or torn edges.
 

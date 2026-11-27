@@ -40,12 +40,18 @@
     let INFO = { favoriteDays: 180 };
 
     // ---------- Note wall ----------
+    // Handwriting follows the person (by name), so the same person always writes the same way
+    const handOf = (name) => {
+      let h = 0;
+      for (const ch of String(name).trim().toLowerCase()) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+      return h % 4;
+    };
     function renderWall(board) {
       const note = (b) => {
         const rot = ((b.nr * 37) % 11) - 5; // stable tilt per order
         const fresh = seen.size && !seen.has(b.nr) ? ' new' : '';
         // Tape: stable per order but varied – angle, offset, length, tint and edges
-        const tape = ` tape${(b.nr * 7) % 4} edge${(b.nr * 5) % 3}`;
+        const tape = ` tape${(b.nr * 7) % 4} edge${(b.nr * 5) % 3} hand${handOf(b.name)}`;
         const tapeStyle = `--tr:${((b.nr * 53) % 17) - 8}deg;--tx:${((b.nr * 29) % 25) - 12}px;--tw:${30 + ((b.nr * 11) % 18)}px`;
         if (b.photo) {
           return `<div class="note polaroid fx${b.nr % 8}${tape}${fresh}" style="--rot:${rot}deg;${tapeStyle}"><div class="ph"><img src="${esc(b.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest('.ph').classList.add('broken')" /></div><b>${esc(b.name)}</b><span>${esc(b.item)}</span></div>`;
